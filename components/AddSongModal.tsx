@@ -64,7 +64,16 @@ export default function AddSongModal({ isOpen, onClose, onSuccess }: AddSongModa
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || errorData.details || 'Failed to analyze chord sheet');
+        let errorMessage = errorData.error || errorData.details || 'Failed to analyze chord sheet';
+        
+        // Enhance error messages based on status code
+        if (response.status === 429) {
+          errorMessage = '⚠️ Rate limit exceeded. The free tier allows 15 requests per minute and 1,500 per day. Please wait a moment and try again.';
+        } else if (response.status === 401 || response.status === 403) {
+          errorMessage = '🔑 API key error. Please check your Gemini API key configuration in environment variables.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -83,7 +92,17 @@ export default function AddSongModal({ isOpen, onClose, onSuccess }: AddSongModa
         router.push(`/sheet/${result.sheet.id}`);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      // Extract error message
+      let errorMessage = err.message || 'An error occurred';
+      
+      // Show user-friendly error messages
+      if (errorMessage.includes('Rate limit') || errorMessage.includes('429')) {
+        errorMessage = '⚠️ Rate limit exceeded. Please wait a minute and try again. Free tier: 15 requests/minute, 1,500/day.';
+      } else if (errorMessage.includes('API key') || errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorMessage = '🔑 API key error. Please check your Gemini API key configuration.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

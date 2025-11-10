@@ -53,12 +53,25 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error in analyze endpoint:', error);
+    
+    const errorMessage = error.message || 'Unknown error';
+    let statusCode = 500;
+    
+    // Set appropriate status codes for different error types
+    if (errorMessage.includes('Rate limit')) {
+      statusCode = 429; // Too Many Requests
+    } else if (errorMessage.includes('API key') || errorMessage.includes('Invalid')) {
+      statusCode = 401; // Unauthorized
+    } else if (errorMessage.includes('Invalid URL')) {
+      statusCode = 400; // Bad Request
+    }
+    
     return NextResponse.json(
       {
-        error: 'Failed to analyze chord sheet',
-        details: error.message
+        error: errorMessage,
+        details: errorMessage
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }

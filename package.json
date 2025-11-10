@@ -9,11 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@vercel/postgres": "^0.5.1",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "@vercel/postgres": "^0.5.1",
-    "openai": "^4.20.1"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@types/node": "^20",

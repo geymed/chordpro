@@ -4,18 +4,25 @@ import { useState, useMemo, useEffect } from 'react';
 import { getSheets } from '@/lib/api';
 import { ChordSheet, Language } from '@/types';
 import SongCard from '@/components/SongCard';
+import AddSongModal from '@/components/AddSongModal';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [languageFilter, setLanguageFilter] = useState<Language | 'all'>('all');
   const [sheets, setSheets] = useState<ChordSheet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  useEffect(() => {
+  const loadSheets = () => {
+    setLoading(true);
     getSheets()
       .then(setSheets)
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadSheets();
   }, []);
 
   const filteredSheets = useMemo(() => {
@@ -43,10 +50,20 @@ export default function Home() {
 
         {/* Add New Button */}
         <div className="mb-8">
-          <button className="bg-yellow-400 text-black font-semibold px-6 py-3 rounded-lg border-2 border-black hover:bg-yellow-300 transition-colors">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-yellow-400 text-black font-semibold px-6 py-3 rounded-lg border-2 border-black hover:bg-yellow-300 transition-colors"
+          >
             + Add New Chord Sheet
           </button>
         </div>
+
+        {/* Add Song Modal */}
+        <AddSongModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSuccess={loadSheets}
+        />
 
         {/* Search and Filters */}
         <div className="mb-8 space-y-4">

@@ -1,20 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ChordSheet } from '@/types';
-import { getSheet, saveSheet, deleteSheet as deleteSheetStorage } from '@/lib/api-storage';
+import { getSheetById, updateSheet, deleteSheet } from '@/lib/db';
 
 // GET /api/sheets/[id] - Get a specific sheet
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const sheet = getSheet(id);
-  
-  if (!sheet) {
-    return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
+  try {
+    const { id } = await params;
+    const sheet = await getSheetById(id);
+    
+    if (!sheet) {
+      return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json(sheet);
+  } catch (error: any) {
+    console.error('Error fetching sheet:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch sheet', details: error.message },
+      { status: 500 }
+    );
   }
-  
-  return NextResponse.json(sheet);
 }
 
 // PUT /api/sheets/[id] - Update a sheet
@@ -22,20 +30,24 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const existingSheet = getSheet(id);
-  
-  if (!existingSheet) {
-    return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
-  }
-  
   try {
+    const { id } = await params;
+    const existingSheet = await getSheetById(id);
+    
+    if (!existingSheet) {
+      return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
+    }
+    
     const body = await request.json();
     const updatedSheet: ChordSheet = { ...existingSheet, ...body, id };
-    saveSheet(updatedSheet);
-    return NextResponse.json(updatedSheet);
-  } catch (error) {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    const result = await updateSheet(updatedSheet);
+    return NextResponse.json(result);
+  } catch (error: any) {
+    console.error('Error updating sheet:', error);
+    return NextResponse.json(
+      { error: 'Failed to update sheet', details: error.message },
+      { status: 400 }
+    );
   }
 }
 
@@ -44,13 +56,21 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const success = deleteSheetStorage(id);
-  
-  if (!success) {
-    return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
+  try {
+    const { id } = await params;
+    const success = await deleteSheet(id);
+    
+    if (!success) {
+      return NextResponse.json({ error: 'Sheet not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting sheet:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete sheet', details: error.message },
+      { status: 500 }
+    );
   }
-  
-  return NextResponse.json({ success: true });
 }
 

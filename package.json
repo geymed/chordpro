@@ -11,7 +11,9 @@
   "dependencies": {
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "@vercel/postgres": "^0.5.1",
+    "openai": "^4.20.1"
   },
   "devDependencies": {
     "@types/node": "^20",

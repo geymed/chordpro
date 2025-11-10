@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ChordSheet } from '@/types';
-import { getSheets, saveSheet } from '@/lib/api-storage';
+import { getAllSheets, createSheet } from '@/lib/db';
 
 // GET /api/sheets - Get all sheets
 export async function GET() {
-  const sheets = getSheets();
-  return NextResponse.json(sheets);
+  try {
+    const sheets = await getAllSheets();
+    return NextResponse.json(sheets);
+  } catch (error: any) {
+    console.error('Error fetching sheets:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch sheets', details: error.message },
+      { status: 500 }
+    );
+  }
 }
 
 // POST /api/sheets - Create a new sheet
@@ -17,10 +25,14 @@ export async function POST(request: NextRequest) {
       id: body.id || `sheet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       dateAdded: body.dateAdded || new Date().toISOString().split('T')[0],
     };
-    saveSheet(newSheet);
-    return NextResponse.json(newSheet, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    const created = await createSheet(newSheet);
+    return NextResponse.json(created, { status: 201 });
+  } catch (error: any) {
+    console.error('Error creating sheet:', error);
+    return NextResponse.json(
+      { error: 'Failed to create sheet', details: error.message },
+      { status: 400 }
+    );
   }
 }
 

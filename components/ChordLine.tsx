@@ -10,46 +10,53 @@ interface ChordLineProps {
 export default function ChordLine({ line, rtl = false }: ChordLineProps) {
   const { chords, lyrics } = line;
   
-  // Calculate positions for chords based on lyrics
-  const chordPositions: Array<{ chord: string; position: number }> = [];
-  let currentPos = 0;
+  // Split lyrics into words and spaces, preserving the structure
+  const parts = lyrics.split(/(\s+)/);
   
-  // For RTL, we need to handle differently
-  if (rtl) {
-    // For Hebrew, chords are still positioned from left, but text flows RTL
-    chords.forEach((chord, idx) => {
-      if (chord) {
-        // Approximate position - in RTL, we count from right
-        const charCount = lyrics.slice(0, idx).length;
-        chordPositions.push({ chord, position: charCount });
-      }
-    });
-  } else {
-    // For LTR, position chords based on character count
-    chords.forEach((chord, idx) => {
-      if (chord) {
-        const charCount = lyrics.slice(0, idx).length;
-        chordPositions.push({ chord, position: charCount });
-      }
-    });
-  }
-
-  // Create chord line with spaces
-  const maxLength = Math.max(lyrics.length, chordPositions.length > 0 ? Math.max(...chordPositions.map(cp => cp.position + cp.chord.length)) : 0);
-  const chordLine = Array(maxLength).fill(' ');
+  // Build chord line character by character, matching the lyrics structure
+  const chordLineChars: string[] = [];
+  let chordIndex = 0;
   
-  chordPositions.forEach(({ chord, position }) => {
-    for (let i = 0; i < chord.length && position + i < maxLength; i++) {
-      chordLine[position + i] = chord[i];
+  parts.forEach((part) => {
+    // If this is whitespace, preserve it in the chord line
+    if (/^\s+$/.test(part)) {
+      chordLineChars.push(...part.split(''));
+      return;
     }
+    
+    // This is a word - get its chord (if available)
+    const chord = chordIndex < chords.length ? chords[chordIndex] : '';
+    
+    if (chord && chord.trim() !== '') {
+      // Place the chord above the word
+      const wordLength = part.length;
+      const chordLength = chord.length;
+      
+      // Place chord characters, then pad with spaces to match word length
+      for (let i = 0; i < wordLength; i++) {
+        if (i < chordLength) {
+          chordLineChars.push(chord[i]);
+        } else {
+          chordLineChars.push(' ');
+        }
+      }
+    } else {
+      // No chord for this word - fill with spaces to maintain alignment
+      chordLineChars.push(...part.split('').map(() => ' '));
+    }
+    
+    // Move to next chord (only for non-whitespace parts)
+    chordIndex++;
   });
+  
+  const chordLine = chordLineChars.join('');
 
   return (
-    <div dir={rtl ? 'rtl' : 'ltr'} className="font-mono">
-      <div dir="ltr" className="text-yellow-400 font-semibold leading-tight mb-1">
-        {chordLine.join('')}
+    <div dir={rtl ? 'rtl' : 'ltr'} className="font-mono whitespace-pre">
+      <div dir={rtl ? 'rtl' : 'ltr'} className="text-yellow-400 font-semibold leading-tight mb-1">
+        {chordLine}
       </div>
-      <div className="text-white leading-relaxed">
+      <div className="text-white leading-relaxed whitespace-pre">
         {lyrics}
       </div>
     </div>

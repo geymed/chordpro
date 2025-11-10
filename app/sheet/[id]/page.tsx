@@ -1,13 +1,13 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getSheet } from '@/lib/api';
 import { ChordSheet } from '@/types';
 import ChordLine from '@/components/ChordLine';
 
 export default function SheetPage() {
-  const params = use(useParams());
+  const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const [sheet, setSheet] = useState<ChordSheet | null>(null);

@@ -10,9 +10,59 @@ The `@vercel/postgres` package is already added to `package.json`. Install it:
 npm install
 ```
 
-## Step 2: Set Up Vercel Postgres
+## Step 2: Set Up Database
 
-### Option A: Via Vercel Dashboard (Recommended)
+### Option A: Local PostgreSQL (For Local Development)
+
+If you already have PostgreSQL images installed locally, you can use them for local development:
+
+1. **Start your PostgreSQL container/image:**
+   ```bash
+   # Example with Docker (adjust based on your setup)
+   docker ps  # Check if PostgreSQL is already running
+   docker start <postgres-container-name>  # If stopped
+   # OR
+   docker run -d --name chordpro-postgres -e POSTGRES_PASSWORD=password -e POSTGRES_DB=chordvault -p 5432:5432 postgres:latest
+   ```
+
+2. **Create a database** (if not already created):
+   ```bash
+   # Connect to PostgreSQL
+   psql -h localhost -U postgres
+   # OR if using Docker:
+   docker exec -it <postgres-container-name> psql -U postgres
+   
+   # Create database
+   CREATE DATABASE chordvault;
+   \q
+   ```
+
+3. **Set up environment variables locally:**
+   
+   Create a `.env.local` file in your project root (or add to existing `.env.local`):
+   ```bash
+   POSTGRES_URL="postgresql://postgres:password@localhost:5432/chordvault"
+   POSTGRES_PRISMA_URL="postgresql://postgres:password@localhost:5432/chordvault"
+   POSTGRES_URL_NON_POOLING="postgresql://postgres:password@localhost:5432/chordvault"
+   ```
+   
+   **Adjust the connection string based on your setup:**
+   - Replace `postgres` with your PostgreSQL username
+   - Replace `password` with your PostgreSQL password
+   - Replace `localhost:5432` with your host and port if different
+   - Replace `chordvault` with your database name
+
+4. **Initialize the database schema:**
+   ```bash
+   npx tsx lib/db-init.ts
+   ```
+
+5. **Start your development server:**
+   ```bash
+   npm run dev
+   ```
+
+### Option B: Via Vercel Dashboard (For Production)
 
 1. **Deploy your app to Vercel first** (if not already deployed)
    - Push to GitHub
@@ -32,7 +82,7 @@ npm install
    - Vercel automatically adds the connection variables
    - No manual configuration needed!
 
-### Option B: Via Vercel CLI
+### Option C: Via Vercel CLI
 
 ```bash
 # Install Vercel CLI if not already installed
@@ -117,8 +167,11 @@ https://your-app.vercel.app/api/init-db
 ### Local development
 
 For local development, you can:
-1. Use Vercel's local development with `vercel dev` (it will use your production database)
-2. Or set up a local Postgres instance and use those connection strings
+1. **Use your existing local PostgreSQL** (see Option A in Step 2 above) - Recommended for local development
+2. Use Vercel's local development with `vercel dev` (it will use your production database)
+3. Set up a new local Postgres instance if you don't have one
+
+**Note:** Make sure `.env.local` is in your `.gitignore` file to avoid committing database credentials!
 
 ## Next Steps
 

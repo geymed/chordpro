@@ -1,6 +1,7 @@
 'use client';
 
 import { ChordLine as ChordLineType } from '@/types';
+import { chordToString, normalizeChord } from '@/lib/chord-utils';
 
 interface ChordLineProps {
   line: ChordLineType;
@@ -25,17 +26,28 @@ export default function ChordLine({ line, rtl = false }: ChordLineProps) {
     }
     
     // This is a word - get its chord (if available)
-    const chord = chordIndex < chords.length ? chords[chordIndex] : '';
+    const chord = chordIndex < chords.length ? chords[chordIndex] : null;
     
-    if (chord && chord.trim() !== '') {
+    // Convert chord to string (handles both Chord objects and strings)
+    let chordStr = '';
+    if (chord) {
+      if (typeof chord === 'string') {
+        chordStr = chord;
+      } else {
+        // It's a Chord object
+        chordStr = chordToString(chord);
+      }
+    }
+    
+    if (chordStr && chordStr.trim() !== '') {
       // Place the chord above the word
       const wordLength = part.length;
-      const chordLength = chord.length;
+      const chordLength = chordStr.length;
       
       // Place chord characters, then pad with spaces to match word length
       for (let i = 0; i < wordLength; i++) {
         if (i < chordLength) {
-          chordLineChars.push(chord[i]);
+          chordLineChars.push(chordStr[i]);
         } else {
           chordLineChars.push(' ');
         }

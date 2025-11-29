@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getSheet } from '@/lib/api';
+import { getSheet, deleteSheet } from '@/lib/api';
 import { ChordSheet } from '@/types';
 import ChordLine from '@/components/ChordLine';
+import AutoScrollControl from '@/components/AutoScrollControl';
 
 export default function SheetPage() {
   const params = useParams();
@@ -12,6 +13,8 @@ export default function SheetPage() {
   const id = params.id as string;
   const [sheet, setSheet] = useState<ChordSheet | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     getSheet(id)
@@ -19,6 +22,24 @@ export default function SheetPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleDelete = async () => {
+    if (!showConfirm) {
+      setShowConfirm(true);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteSheet(id);
+      router.push('/');
+    } catch (error) {
+      console.error('Failed to delete sheet:', error);
+      alert('Failed to delete song. Please try again.');
+      setIsDeleting(false);
+      setShowConfirm(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -55,20 +76,40 @@ export default function SheetPage() {
   return (
     <div className="min-h-screen bg-gray-900">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button */}
-        <button
-          onClick={() => router.push('/')}
-          className="mb-8 bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
-        >
-          <span>←</span>
-          <span>Back to Library</span>
-        </button>
+        {/* Back Button and Delete Button */}
+        <div className="mb-8 flex items-center justify-between">
+          <button
+            onClick={() => router.push('/')}
+            className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+          >
+            <span>←</span>
+            <span>Back to Library</span>
+          </button>
+
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${showConfirm
+              ? 'bg-red-600 hover:bg-red-700 text-white'
+              : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-red-400'
+              }`}
+          >
+            {showConfirm ? (
+              isDeleting ? 'Deleting...' : 'Confirm Delete?'
+            ) : (
+              <>
+                <span>🗑️</span>
+                <span>Delete</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {/* Song Header */}
         <div className={`mb-8 ${isRTL ? 'text-right' : 'text-left'}`}>
           <h1 className="text-4xl font-bold text-white mb-2">{sheet.title}</h1>
           <p className="text-gray-400 text-lg mb-4">{sheet.artist}</p>
-          
+
           <div className="flex items-center gap-6 text-sm text-gray-400 mb-6">
             <div className="flex items-center gap-2">
               <span>🌐</span>
@@ -123,7 +164,7 @@ export default function SheetPage() {
           ))}
         </div>
       </div>
+      <AutoScrollControl />
     </div>
   );
 }
-

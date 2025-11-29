@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { getSheets } from '@/lib/api';
+import Link from 'next/link';
+import { getSheets, createSheet } from '@/lib/api';
 import { ChordSheet, Language } from '@/types';
 import SongCard from '@/components/SongCard';
 import AddSongModal from '@/components/AddSongModal';
@@ -27,14 +28,14 @@ export default function Home() {
 
   const filteredSheets = useMemo(() => {
     return sheets.filter(sheet => {
-      const matchesSearch = 
+      const matchesSearch =
         sheet.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         sheet.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (sheet.titleEn?.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (sheet.artistEn?.toLowerCase().includes(searchQuery.toLowerCase()));
-      
+
       const matchesLanguage = languageFilter === 'all' || sheet.language === languageFilter;
-      
+
       return matchesSearch && matchesLanguage;
     });
   }, [sheets, searchQuery, languageFilter]);
@@ -48,14 +49,30 @@ export default function Home() {
           <p className="text-gray-400 text-lg">Your personal guitar chord sheet library</p>
         </div>
 
-        {/* Add New Button */}
-        <div className="mb-8">
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-yellow-400 text-black font-semibold px-6 py-3 rounded-lg border-2 border-black hover:bg-yellow-300 transition-colors"
-          >
-            + Add New Chord Sheet
-          </button>
+        {/* New Header/Action Bar */}
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold text-white">My Song Library 🎸</h1>
+          <div className="flex gap-4">
+            {/* Show Local Studio ONLY in development */}
+            {process.env.NODE_ENV !== 'production' && (
+              <Link
+                href="/studio"
+                className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 border border-gray-700"
+              >
+                <span>🎙️</span>
+                <span>Local Studio</span>
+              </Link>
+            )}
+
+            {/* Show Upload button in production (or both for convenience) */}
+            <Link
+              href="/upload"
+              className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 border border-gray-700"
+            >
+              <span>📤</span>
+              <span>Upload</span>
+            </Link>
+          </div>
         </div>
 
         {/* Add Song Modal */}
@@ -74,35 +91,32 @@ export default function Home() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-700 focus:outline-none focus:border-yellow-400"
           />
-          
+
           <div className="flex gap-2">
             <button
               onClick={() => setLanguageFilter('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                languageFilter === 'all'
-                  ? 'bg-yellow-400 text-black'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'all'
+                ? 'bg-yellow-400 text-black'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
             >
               All Languages
             </button>
             <button
               onClick={() => setLanguageFilter('he')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                languageFilter === 'he'
-                  ? 'bg-yellow-400 text-black'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'he'
+                ? 'bg-yellow-400 text-black'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
             >
               עברית
             </button>
             <button
               onClick={() => setLanguageFilter('en')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                languageFilter === 'en'
-                  ? 'bg-yellow-400 text-black'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'en'
+                ? 'bg-yellow-400 text-black'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
             >
               English
             </button>
@@ -118,7 +132,7 @@ export default function Home() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredSheets.map((sheet) => (
-                <SongCard key={sheet.id} sheet={sheet} />
+                <SongCard key={sheet.id} sheet={sheet} onDelete={loadSheets} />
               ))}
             </div>
 

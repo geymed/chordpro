@@ -1,10 +1,16 @@
 import type { Metadata } from 'next'
-import { Playfair_Display } from 'next/font/google'
+import { Playfair_Display, Crimson_Text } from 'next/font/google'
 import './globals.css'
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
   variable: '--font-playfair',
+})
+
+const crimson = Crimson_Text({
+  weight: ['400', '600', '700'],
+  subsets: ['latin'],
+  variable: '--font-crimson',
 })
 
 export const metadata: Metadata = {
@@ -19,7 +25,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={playfair.variable}>{children}</body>
+      <body className={`${playfair.variable} ${crimson.variable}`}>{children}</body>
     </html>
   )
 }

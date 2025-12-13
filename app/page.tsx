@@ -55,8 +55,8 @@ export default function Home() {
               href="/upload/image"
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
             >
-              <span>📷</span>
-              <span>Import from Image</span>
+              <span>➕</span>
+              <span>Import Song</span>
             </Link>
 
             <Link

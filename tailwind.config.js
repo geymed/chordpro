@@ -8,11 +8,13 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        parchment: '#f5f4f2', // Off-white with subtle warm tint
+        parchment: '#c9b99b', // Darker grayish-brown with warm undertone
         wood: '#2a2825', // Near-black with warm undertone
       },
       fontFamily: {
         vintage: ['var(--font-playfair)', 'serif'],
+        music: ['var(--font-crimson)', 'Crimson Text', 'Georgia', 'serif'],
+        chord: ['var(--font-crimson)', 'Crimson Text', 'Georgia', 'serif'],
       },
     },
   },

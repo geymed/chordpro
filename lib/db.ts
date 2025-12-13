@@ -144,6 +144,9 @@ async function sql(strings: TemplateStringsArray, ...values: any[]) {
 
 // Initialize database schema
 export async function initDatabase() {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:146',message:'initDatabase entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   try {
     // Create sheets table
     await sql`
@@ -164,6 +167,27 @@ export async function initDatabase() {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `;
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:166',message:'CREATE TABLE completed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    // Check if image_data column exists, add it if missing (migration)
+    try {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:169',message:'Checking for image_data column',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      await sql`
+        ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT
+      `;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:172',message:'ALTER TABLE completed (or column already exists)',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } catch (alterError) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:175',message:'ALTER TABLE failed',data:{error:alterError instanceof Error ? alterError.message : String(alterError)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      // Column might already exist or there's a different issue, continue
+    }
 
     // Create index for faster searches
     await sql`
@@ -307,6 +331,9 @@ export async function getSheetById(id: string): Promise<ChordSheet | null> {
 
 // Create a new sheet
 export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:309',message:'createSheet entry',data:{sheetId:sheet.id,hasImageData:!!sheet.imageData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   try {
     // Validate and fix chord names before saving
     const validatedSheet = validateAndFixChordSheet(sheet);
@@ -322,26 +349,109 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
 
-    await sql`
-      INSERT INTO sheets (
-        id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
-      ) VALUES (
-        ${truncatedSheet.id},
-        ${truncatedSheet.title},
-        ${truncatedSheet.titleEn || null},
-        ${truncatedSheet.artist},
-        ${truncatedSheet.artistEn || null},
-        ${truncatedSheet.language},
-        ${truncatedSheet.key || null},
-        ${truncatedSheet.tempo || null},
-        ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-        ${JSON.stringify(truncatedSheet.sections)},
-        ${truncatedSheet.dateAdded},
-        ${truncatedSheet.imageData || null}
-      )
-    `;
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:325',message:'Before INSERT - checking columns',data:{insertingImageData:!!truncatedSheet.imageData,columns:['id','title','title_en','artist','artist_en','language','key','tempo','capo','sections','date_added','image_data']},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // Try INSERT with image_data first, fallback to without if column doesn't exist
+    try {
+      await sql`
+        INSERT INTO sheets (
+          id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
+        ) VALUES (
+          ${truncatedSheet.id},
+          ${truncatedSheet.title},
+          ${truncatedSheet.titleEn || null},
+          ${truncatedSheet.artist},
+          ${truncatedSheet.artistEn || null},
+          ${truncatedSheet.language},
+          ${truncatedSheet.key || null},
+          ${truncatedSheet.tempo || null},
+          ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+          ${JSON.stringify(truncatedSheet.sections)},
+          ${truncatedSheet.dateAdded},
+          ${truncatedSheet.imageData || null}
+        )
+      `;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:343',message:'INSERT with image_data succeeded',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+    } catch (insertError: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:346',message:'INSERT with image_data failed, trying fallback',data:{errorCode:insertError?.code,errorColumn:insertError?.column,errorMessage:insertError?.message?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      // If error is about missing column, try without image_data
+      if (insertError?.code === '42703' || (insertError?.message && insertError.message.includes('image_data'))) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:350',message:'Retrying INSERT without image_data column',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        
+        // Try to add the column first (migration on-the-fly)
+        try {
+          await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:354',message:'Added image_data column, retrying INSERT',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Retry with image_data
+          await sql`
+            INSERT INTO sheets (
+              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
+            ) VALUES (
+              ${truncatedSheet.id},
+              ${truncatedSheet.title},
+              ${truncatedSheet.titleEn || null},
+              ${truncatedSheet.artist},
+              ${truncatedSheet.artistEn || null},
+              ${truncatedSheet.language},
+              ${truncatedSheet.key || null},
+              ${truncatedSheet.tempo || null},
+              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+              ${JSON.stringify(truncatedSheet.sections)},
+              ${truncatedSheet.dateAdded},
+              ${truncatedSheet.imageData || null}
+            )
+          `;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:375',message:'INSERT succeeded after adding column',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        } catch (retryError) {
+          // If adding column failed, try INSERT without image_data as last resort
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:379',message:'Column addition failed, trying INSERT without image_data',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          await sql`
+            INSERT INTO sheets (
+              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
+            ) VALUES (
+              ${truncatedSheet.id},
+              ${truncatedSheet.title},
+              ${truncatedSheet.titleEn || null},
+              ${truncatedSheet.artist},
+              ${truncatedSheet.artistEn || null},
+              ${truncatedSheet.language},
+              ${truncatedSheet.key || null},
+              ${truncatedSheet.tempo || null},
+              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+              ${JSON.stringify(truncatedSheet.sections)},
+              ${truncatedSheet.dateAdded}
+            )
+          `;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:396',message:'INSERT without image_data succeeded',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        }
+      } else {
+        // Different error, re-throw
+        throw insertError;
+      }
+    }
     return truncatedSheet;
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:345',message:'INSERT error caught',data:{errorMessage:error instanceof Error ? error.message : String(error),errorCode:(error as any)?.code,errorColumn:(error as any)?.column},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     console.error('Error creating sheet:', error);
     throw error;
   }

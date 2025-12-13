@@ -1,9 +1,13 @@
 import { parseChord, chordToString } from './chord-utils';
 import { ChordSheet, ChordSection } from '@/types';
+import { validateChordStrict, validateChordSheetStrict } from './strict-chord-validator';
 
 /**
  * Validates and fixes a chord string using parseChord
  * Returns the cleaned chord string or null if invalid
+ * 
+ * NOTE: For production use, consider using validateChordStrict from strict-chord-validator.ts
+ * which only accepts valid chords and rejects invalid ones
  */
 export function validateChord(chordStr: string | undefined): string | undefined {
   if (!chordStr || chordStr.trim() === '') {
@@ -20,7 +24,7 @@ export function validateChord(chordStr: string | undefined): string | undefined 
     return chordToString(parsed);
   }
 
-  // If parsing failed, try common fixes
+  // If parsing failed, try common fixes (for OCR errors)
   const fixes: { pattern: RegExp; replacement: string }[] = [
     // Fix truncated "di" -> "dim"
     { pattern: /([A-G][#b]?)di$/i, replacement: '$1dim' },
@@ -52,6 +56,9 @@ export function validateChord(chordStr: string | undefined): string | undefined 
 
 /**
  * Validates and cleans all chords in a chord sheet
+ * Uses lenient validation (tries to fix OCR errors)
+ * 
+ * For strict validation (production-ready), use validateChordSheetStrict
  */
 export function validateChordSheet(sheet: Partial<ChordSheet>): Partial<ChordSheet> {
   if (!sheet.sections) {
@@ -72,6 +79,14 @@ export function validateChordSheet(sheet: Partial<ChordSheet>): Partial<ChordShe
     ...sheet,
     sections: validatedSections
   };
+}
+
+/**
+ * STRICT validation - only accepts valid chords, rejects invalid ones
+ * Use this for production to ensure data integrity
+ */
+export function validateChordSheetStrictProduction(sheet: Partial<ChordSheet>): Partial<ChordSheet> {
+  return validateChordSheetStrict(sheet);
 }
 
 /**
@@ -140,7 +155,7 @@ Return format: ["C", "Am", "F", null, "G7", ...]`;
     const cleanedChordsText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
 
     // Extract JSON from response (might have markdown code blocks)
-    const jsonMatch = cleanedChordsText.match(/\[.*?\]/s);
+    const jsonMatch = cleanedChordsText.match(/\[[\s\S]*?\]/);
     const cleanedChords: (string | null)[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
     // Apply cleaned chords back to the sheet

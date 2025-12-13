@@ -44,23 +44,52 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
 
         if (!currentLine.trim()) continue;
 
-        // Check for section headers (simple heuristic)
-        if (currentLine.trim().endsWith(':') || ['Chorus', 'Verse', 'Bridge'].includes(currentLine.trim())) {
+        // Check for section headers - support both bracket format [Intro] and plain format "Intro:"
+        const trimmedLine = currentLine.trim();
+        let sectionLabel: string | null = null;
+        
+        // Try bracket format: [Intro], [Verse 1], etc.
+        const bracketMatch = trimmedLine.match(/^\[(.*?)\]$/);
+        if (bracketMatch && bracketMatch[1]) {
+            sectionLabel = bracketMatch[1];
+        } else {
+            // Try plain format: "Intro:", "Verse 1:", etc.
+            if (trimmedLine.endsWith(':') || ['Chorus', 'Verse', 'Bridge', 'Intro', 'Outro'].some(word => 
+                trimmedLine.toLowerCase().startsWith(word.toLowerCase())
+            )) {
+                sectionLabel = trimmedLine.replace(':', '').trim();
+            }
+        }
+        
+        if (sectionLabel) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:48',message:'Section header detected',data:{sectionLabel,line:trimmedLine},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             if (currentSection.lines.length > 0) {
                 sections.push(currentSection);
             }
+            const lowerLabel = sectionLabel.toLowerCase();
+            let sectionType: 'verse' | 'chorus' | 'bridge' = 'verse';
+            if (lowerLabel.includes('chorus')) sectionType = 'chorus';
+            else if (lowerLabel.includes('bridge')) sectionType = 'bridge';
+            
             currentSection = {
                 id: `section-${sections.length + 1}`,
-                label: currentLine.replace(':', '').trim(),
-                type: currentLine.toLowerCase().includes('chorus') ? 'chorus' : 'verse',
+                label: sectionLabel, // sectionLabel is guaranteed to be non-null here
+                type: sectionType,
                 lines: []
             };
             continue;
         }
 
         if (isChordLine(currentLine)) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:61',message:'Chord line detected',data:{line:currentLine.substring(0,50),hasNextLine:!!nextLine,nextIsChordLine:nextLine ? isChordLine(nextLine) : false,currentSection:currentSection.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
             // It's a chord line. Check if next line is lyrics.
-            if (nextLine && !isChordLine(nextLine)) {
+            if (nextLine && !isChordLine(nextLine) && nextLine.trim()) {
                 // Merge Chords + Lyrics
                 const chordLine = currentLine;
                 // Apply Hebrew reversal to the lyric line
@@ -118,11 +147,28 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
                 currentSection.lines.push(mergedLine);
                 i++; // Skip next line since we consumed it
             } else {
-                // Just chords (instrumental line)
-                const tokens = currentLine.trim().split(/\s+/);
-                currentSection.lines.push({
-                    words: tokens.map(c => ({ word: '', chord: c }))
-                });
+                // Just chords (instrumental line) - chord-only line like intro
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:120',message:'Chord-only line detected',data:{line:currentLine.substring(0,50),section:currentSection.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
+                
+                // Extract chords - handle both plain format "D C E" and [ch]D[/ch] format
+                let chordLine = currentLine.trim();
+                // Remove [ch] and [/ch] tags if present
+                chordLine = chordLine.replace(/\[\/?ch\]/g, '').trim();
+                
+                // Split by whitespace and filter out empty strings
+                const tokens = chordLine.split(/\s+/).filter(t => t.trim());
+                
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:128',message:'Extracted chords from chord-only line',data:{chords:tokens,count:tokens.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
+                
+                if (tokens.length > 0) {
+                    currentSection.lines.push({
+                        words: tokens.map(c => ({ word: '', chord: c }))
+                    });
+                }
             }
         } else {
             // Just lyrics

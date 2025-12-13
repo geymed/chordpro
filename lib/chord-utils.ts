@@ -84,6 +84,7 @@ export function parseChord(chordStr: string): Chord | null {
   let quality: ChordQuality = null;
   let extension: number | null = null;
   let add: number | null = null;
+  let isMinorMajor = false; // Track if this is a minor-major chord (mmaj7, mmaj9, etc.)
 
   // Check for diminished FIRST (before minor, since 'dim' contains 'm')
   if (remaining.match(/^dim/i)) {
@@ -133,11 +134,29 @@ export function parseChord(chordStr: string): Chord | null {
   // Check for minor
   else if (remaining.match(/^m(?:aj|in|7|9|11|13)?/i)) {
     quality = 'minor';
-    const extMatch = remaining.match(/^m(?:aj|in)?(\d+)/i);
-    if (extMatch) {
-      extension = parseInt(extMatch[1], 10);
+    
+    // Special case: mmaj7, mmaj9, etc. (minor-major 7th)
+    // This is a minor chord with a major 7th extension
+    const mmajMatch = remaining.match(/^mmaj(\d+)?/i);
+    if (mmajMatch) {
+      // Extract the extension number after "mmaj"
+      if (mmajMatch[1]) {
+        extension = parseInt(mmajMatch[1], 10);
+      } else {
+        // Just "mmaj" without number - treat as mmaj7 (common default)
+        extension = 7;
+      }
+      // Mark that this is a minor-major chord
+      isMinorMajor = true;
+      remaining = remaining.replace(/^mmaj(\d+)?/i, '');
+    } else {
+      // Regular minor with extension (m7, m9, etc.)
+      const extMatch = remaining.match(/^m(?:aj|in)?(\d+)/i);
+      if (extMatch) {
+        extension = parseInt(extMatch[1], 10);
+      }
+      remaining = remaining.replace(/^m(?:aj|in)?(\d+)?/i, '');
     }
-    remaining = remaining.replace(/^m(?:aj|in)?(\d+)?/i, '');
   }
   // Check for augmented
   else if (remaining.match(/^aug/i)) {
@@ -195,7 +214,7 @@ export function parseChord(chordStr: string): Chord | null {
     add,
     inversion,
     special: null,
-    explicitMaj: false, // "maj" was not explicitly present
+    explicitMaj: isMinorMajor, // True for minor-major chords (mmaj7, mmaj9, etc.)
   };
 }
 
@@ -225,6 +244,10 @@ export function chordToString(chord: Chord | null): string {
   // Add quality
   if (chord.quality === 'minor') {
     result += 'm';
+    // For minor-major chords (mmaj7, mmaj9), add "maj" before extension
+    if (chord.explicitMaj && chord.extension) {
+      result += 'maj';
+    }
   } else if (chord.quality === 'major') {
     // Only add 'maj' if it was explicitly present AND there's an extension
     // "maj" always comes with a number (maj7, maj9, etc.)

@@ -46,15 +46,15 @@ export default function ChordLine({ line, rtl = false, editable = false, onLineC
     return false;
   };
 
-  // Filter out empty words, clean Unicode direction marks, and filter out chords
+  // Filter and clean words - keep words with content OR chords (for chord-only lines like intro)
   const cleanWords = words
     .map(w => ({
       ...w,
       word: w.word ? w.word.replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim() : ''
     }))
     .filter(w => {
-      // Keep words that have content and are not chord patterns
-      return w.word.length > 0 && !isChordPattern(w.word);
+      // Keep words that have content (and are not chord patterns) OR words that have chords (chord-only lines)
+      return (w.word.length > 0 && !isChordPattern(w.word)) || (w.chord && w.chord.length > 0);
     });
 
   // Check if this line actually contains Hebrew text
@@ -119,12 +119,13 @@ export default function ChordLine({ line, rtl = false, editable = false, onLineC
                 />
               ) : (
                 <div
-                  className="text-blue-700 font-bold text-xl h-9 whitespace-nowrap px-1 text-center"
+                  className="font-bold text-xl h-9 whitespace-nowrap px-1 text-center"
                   dir="ltr"
                   style={{
                     letterSpacing: '0.1em',
-                    fontFamily: '"Baskerville", "Baskerville Old Face", "Goudy Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif',
-                    fontWeight: '600'
+                    fontFamily: '"Crimson Text", "Baskerville", "Baskerville Old Face", "Goudy Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif',
+                    fontWeight: '700',
+                    color: '#c45a1f' // Dark orange for prominent visibility
                   }}
                 >
                   {chord || ''}
@@ -149,12 +150,13 @@ export default function ChordLine({ line, rtl = false, editable = false, onLineC
                   dir={wordDir}
                   style={{
                     lineHeight: '1.5',
-                    fontFamily: '"Baskerville", "Baskerville Old Face", "Goudy Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif',
+                    fontFamily: '"Crimson Text", "Baskerville", "Baskerville Old Face", "Goudy Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif',
                     letterSpacing: '0.02em',
-                    fontWeight: '400'
+                    fontWeight: '400',
+                    minHeight: word ? 'auto' : '0.5em' // Give minimal height for chord-only lines
                   }}
                 >
-                  {word}
+                  {word || '\u00A0'} {/* Non-breaking space if word is empty (for chord-only lines) */}
                 </div>
               )}
             </div>

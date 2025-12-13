@@ -8,8 +8,22 @@ interface AutoScrollControlProps {
 
 export default function AutoScrollControl({ targetId }: AutoScrollControlProps) {
     const [isPlaying, setIsPlaying] = useState(false);
-    const [speed, setSpeed] = useState(1); // 1-10
+    // Load speed from localStorage, default to 1
+    const [speed, setSpeed] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('autoscroll-speed');
+            return saved ? parseFloat(saved) : 1;
+        }
+        return 1;
+    });
     const scrollInterval = useRef<NodeJS.Timeout | null>(null);
+
+    // Save speed to localStorage whenever it changes
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('autoscroll-speed', speed.toString());
+        }
+    }, [speed]);
 
     useEffect(() => {
         if (isPlaying) {

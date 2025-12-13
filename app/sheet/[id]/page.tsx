@@ -69,7 +69,7 @@ export default function SheetPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#e8d5b7' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#3a3429' }}>
         <div className="text-center text-gray-500">
           <p className="text-lg">Loading...</p>
         </div>
@@ -79,7 +79,7 @@ export default function SheetPage() {
 
   if (!sheet) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#e8d5b7' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#3a3429' }}>
         <div className="text-center">
           <h1 className="text-2xl text-gray-900 mb-4 font-serif">Song not found</h1>
           <button
@@ -102,13 +102,13 @@ export default function SheetPage() {
     return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
   return (
-    <div className="min-h-screen bg-wood text-parchment font-sans" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen font-sans" dir={isRTL ? 'rtl' : 'ltr'} style={{ backgroundColor: '#3a3429' }}>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
         {/* Compact Header Row */}
         <div className={`mb-3 flex items-center ${isRTL ? 'flex-row-reverse' : ''} justify-between`}>
           <button
             onClick={() => router.push('/')}
-            className="text-parchment hover:text-white px-3 py-1.5 rounded-md hover:bg-parchment/20 transition-colors flex items-center gap-2 font-medium text-sm"
+            className="text-gray-300 hover:text-white px-3 py-1.5 rounded-md hover:bg-gray-700 transition-colors flex items-center gap-2 font-medium text-sm"
           >
             <span>←</span>
             <span>Back to Library</span>
@@ -134,7 +134,7 @@ export default function SheetPage() {
               </>
             ) : (
               <button
-                onClick={() => setIsEditing(true)}
+                onClick={() => router.push(`/upload/image?id=${id}`)}
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1 font-medium text-sm"
               >
                 <span>✏️</span>
@@ -164,12 +164,12 @@ export default function SheetPage() {
 
         {/* Song Title Row */}
         <div className="mb-3" dir={titleIsRTL ? 'rtl' : 'ltr'} style={{ textAlign: titleIsRTL ? 'right' : 'left' }}>
-          <h1 className="text-2xl font-vintage font-bold text-parchment leading-tight" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.title}</h1>
-          <p className="text-base text-parchment/80" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.artist}</p>
+          <h1 className="text-2xl font-vintage font-bold text-gray-200 leading-tight" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.title}</h1>
+          <p className="text-base text-gray-300" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.artist}</p>
         </div>
 
         {/* Song Card Container - Maximized */}
-        <div id="song-content" className="bg-parchment rounded-lg p-6 sm:p-8 border border-gray-400 shadow-lg text-gray-900 max-h-[calc(100vh-140px)] overflow-y-auto">
+        <div id="song-content" className="rounded-lg p-6 sm:p-8 border border-gray-400 shadow-lg text-gray-900 max-h-[calc(100vh-140px)] overflow-y-auto" style={{ backgroundColor: '#f8f6f2' }}>
           {/* Chord Sheet Content */}
           <div className="space-y-8" dir={isRTL ? 'rtl' : 'ltr'} style={{ direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
             {sheet?.sections.map((section) => {

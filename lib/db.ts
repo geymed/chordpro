@@ -109,12 +109,18 @@ function getPostgresUrl(): string {
   return process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || '';
 }
 
+function isVercelPostgres(): boolean {
+  // Vercel Postgres provides these specific environment variables
+  return !!(process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD);
+}
+
 function isLocalPostgres(): boolean {
   const postgresUrl = getPostgresUrl();
   if (!postgresUrl) return false;
   if (postgresUrl.includes('localhost') || postgresUrl.includes('127.0.0.1')) return true;
-  if (!process.env.VERCEL && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com')) return true;
-  return false;
+  // For Vercel Postgres, we can use pg directly if we have a connection string
+  // @vercel/postgres seems to have issues, so use pg for all cases when we have a URL
+  return false; // Always use pg when we have a connection string
 }
 
 // Create pg Pool for local PostgreSQL
@@ -123,78 +129,146 @@ let vercelSql: any = null;
 
 // SQL query function that works with both local PostgreSQL and Vercel Postgres
 async function sql(strings: TemplateStringsArray, ...values: any[]) {
-  // Check at runtime if using local PostgreSQL
-  if (isLocalPostgres()) {
-    const postgresUrl = getPostgresUrl();
-    if (!pgPool && postgresUrl) {
-      console.log('Using local PostgreSQL with pg driver');
-      pgPool = new Pool({
-        connectionString: postgresUrl,
-      });
+  const postgresUrl = getPostgresUrl();
+  const usingVercelPostgres = isVercelPostgres();
+  
+  // Check database provider
+  const isNeon = postgresUrl.includes('neon.tech');
+  const isSupabase = postgresUrl.includes('supabase.co') || postgresUrl.includes('supabase.com');
+  
+  // For Vercel Postgres, try @vercel/postgres first (it handles the connection automatically)
+  if (usingVercelPostgres && !vercelSql) {
+    try {
+      console.log('Detected Vercel Postgres, using @vercel/postgres');
+      vercelSql = require('@vercel/postgres').sql;
+    } catch (error) {
+      console.warn('Failed to load @vercel/postgres, falling back to pg:', error);
     }
-    if (pgPool) {
-      // Use pg for local PostgreSQL
+  }
+  
+  // Try @vercel/postgres if available
+  if (vercelSql && usingVercelPostgres) {
+    try {
+      return vercelSql(strings, ...values);
+    } catch (error: any) {
+      console.error('@vercel/postgres error:', {
+        code: error?.code,
+        message: error?.message,
+        name: error?.name
+      });
+      // Fall through to pg if @vercel/postgres fails
+      console.log('Falling back to pg driver');
+    }
+  }
+  
+  // Use pg package directly when we have a connection string
+  if (postgresUrl) {
+    if (!pgPool) {
+      console.log(`Using pg driver with connection string (Provider: ${isSupabase ? 'Supabase' : isNeon ? 'Neon' : 'PostgreSQL'})`);
+      
+      const poolConfig: any = {
+        connectionString: postgresUrl,
+        // Add connection pool settings for serverless
+        max: 1, // Limit connections for serverless
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+      };
+      
+      // Supabase requires SSL
+      if (isSupabase) {
+        poolConfig.ssl = { rejectUnauthorized: false };
+        console.log('Configured SSL for Supabase connection');
+      }
+      
+      // Neon-specific: use non-pooling connection string if available
+      if (isNeon && process.env.POSTGRES_URL_NON_POOLING) {
+        console.log('Using Neon non-pooling connection string');
+        poolConfig.connectionString = process.env.POSTGRES_URL_NON_POOLING;
+      }
+      
+      // For Neon, configure SSL
+      if (isNeon) {
+        poolConfig.ssl = { rejectUnauthorized: false };
+      }
+      
+      pgPool = new Pool(poolConfig);
+    }
+    
+    try {
+      // Use pg for all PostgreSQL connections
       const query = strings.reduce((acc, str, i) => {
         return acc + str + (i < values.length ? `$${i + 1}` : '');
       }, '');
       const result = await pgPool.query(query, values);
       return { rows: result.rows, rowCount: result.rowCount || 0 };
+    } catch (error: any) {
+      const errorInfo = {
+        code: error?.code,
+        message: error?.message,
+        detail: error?.detail,
+        name: error?.name,
+        stack: error?.stack?.split('\n')[0],
+        isSupabase,
+        isNeon,
+        connectionStringHost: postgresUrl ? new URL(postgresUrl).hostname : 'none'
+      };
+      console.error('pg query error:', errorInfo);
+      
+      // If Supabase 404, provide detailed troubleshooting
+      if (isSupabase && (error?.message?.includes('404') || error?.code === 'ENOTFOUND' || error?.name === 'NeonDbError')) {
+        const hostname = postgresUrl ? new URL(postgresUrl).hostname : 'unknown';
+        throw new Error(
+          `Supabase connection failed. Error: ${error?.message || error?.name || 'Unknown error'}\n\n` +
+          `Troubleshooting steps:\n` +
+          `1. Verify the connection string in Supabase Dashboard → Settings → Database → Connection string (URI)\n` +
+          `2. Ensure the database is not paused (check Supabase dashboard)\n` +
+          `3. Check that POSTGRES_URL in Vercel matches the connection string from Supabase\n` +
+          `4. Verify the connection string includes the correct password\n` +
+          `5. Try using POSTGRES_URL_NON_POOLING if available\n\n` +
+          `Connection host: ${hostname}\n` +
+          `Error code: ${error?.code || 'none'}`
+        );
+      }
+      
+      // If Neon error and we haven't tried non-pooling, try that
+      if (isNeon && error?.message?.includes('404') && process.env.POSTGRES_URL_NON_POOLING && postgresUrl === process.env.POSTGRES_URL) {
+        console.log('Retrying with Neon non-pooling connection string...');
+        if (pgPool) {
+          await pgPool.end();
+          pgPool = null;
+        }
+        // Retry with non-pooling
+        return sql(strings, ...values);
+      }
+      
+      // Generic error with details
+      throw new Error(
+        `Database query failed: ${error?.message || error?.name || 'Unknown error'}\n` +
+        `Code: ${error?.code || 'none'}\n` +
+        `Provider: ${isSupabase ? 'Supabase' : isNeon ? 'Neon' : 'PostgreSQL'}`
+      );
     }
   }
   
-  // Use @vercel/postgres for Vercel Postgres (or fallback)
+  // Fallback to @vercel/postgres only if no connection string is available
   if (!vercelSql) {
     try {
-      console.log('Using Vercel Postgres');
-      
-      // Workaround: @vercel/postgres requires POSTGRES_URL specifically
-      // If it's not set but we have another Postgres URL, use it
-      if (!process.env.POSTGRES_URL) {
-        const alternativeUrl = process.env.POSTGRES_PRISMA_URL || 
-                              process.env.POSTGRES_URL_NON_POOLING ||
-                              process.env.DATABASE_URL;
-        if (alternativeUrl) {
-          console.log('Setting POSTGRES_URL from alternative environment variable');
-          process.env.POSTGRES_URL = alternativeUrl;
-        }
-      }
-      
-      // Log environment check for debugging
-      const postgresUrl = getPostgresUrl();
-      const envVars = Object.keys(process.env).filter(k => k.includes('POSTGRES')).join(', ') || 'none';
-      console.log('Postgres connection check:', {
-        hasPostgresUrl: !!postgresUrl,
-        hasEnvVar: !!process.env.POSTGRES_URL,
-        foundEnvVars: envVars,
-        isVercel: !!process.env.VERCEL
-      });
-      
+      console.log('Falling back to @vercel/postgres (no connection string found)');
       vercelSql = require('@vercel/postgres').sql;
     } catch (error) {
       throw new Error(
-        'Failed to load @vercel/postgres. Make sure @vercel/postgres is installed and POSTGRES_URL is set in Vercel environment variables.'
+        'No database connection available. Please set POSTGRES_URL environment variable.'
       );
     }
   }
   
   try {
-    // @vercel/postgres automatically reads POSTGRES_URL from environment
     return vercelSql(strings, ...values);
   } catch (error: any) {
-    if (error?.code === 'missing_connection_string' || error?.message?.includes('POSTGRES_URL')) {
-      const envVars = Object.keys(process.env).filter(k => k.includes('POSTGRES')).join(', ') || 'none';
-      throw new Error(
-        `Database connection not configured. POSTGRES_URL environment variable is missing.\n` +
-        `Found Postgres-related env vars: ${envVars}\n` +
-        `Please ensure POSTGRES_URL is set in Vercel project settings:\n` +
-        `1. Go to your Vercel project dashboard\n` +
-        `2. Navigate to Settings → Environment Variables\n` +
-        `3. Verify POSTGRES_URL exists and is available for Production environment\n` +
-        `4. If using Vercel Postgres, it should be automatically configured when you create the database.\n` +
-        `5. After setting/changing environment variables, you MUST redeploy for changes to take effect.\n\n` +
-        `Debug info: Check Vercel function logs to see which environment variables are actually available at runtime.`
-      );
-    }
+    console.error('@vercel/postgres error:', {
+      code: error?.code,
+      message: error?.message
+    });
     throw error;
   }
 }
@@ -489,7 +563,7 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
       if (insertError?.code === '42703' || (insertError?.message && insertError.message.includes('image_data'))) {
         console.warn('image_data column missing, inserting without it');
         // Fallback: INSERT without image_data
-        await sql`
+    await sql`
       INSERT INTO sheets (
         id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
       ) VALUES (

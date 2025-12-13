@@ -104,46 +104,93 @@ if (process.env.NODE_ENV !== 'production' && typeof window === 'undefined') {
 }
 
 // Determine if we're using local PostgreSQL or Vercel Postgres
-const postgresUrl = process.env.POSTGRES_URL || '';
-const isLocalPostgres = postgresUrl.includes('localhost') ||
-  postgresUrl.includes('127.0.0.1') ||
-  (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com'));
+// Check at runtime, not at module load time (for serverless functions)
+function getPostgresUrl(): string {
+  return process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || '';
+}
+
+function isLocalPostgres(): boolean {
+  const postgresUrl = getPostgresUrl();
+  if (!postgresUrl) return false;
+  if (postgresUrl.includes('localhost') || postgresUrl.includes('127.0.0.1')) return true;
+  if (!process.env.VERCEL && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com')) return true;
+  return false;
+}
 
 // Create pg Pool for local PostgreSQL
 let pgPool: Pool | null = null;
 let vercelSql: any = null;
 
-if (isLocalPostgres && postgresUrl) {
-  console.log('Using local PostgreSQL with pg driver');
-  pgPool = new Pool({
-    connectionString: postgresUrl,
-  });
-} else {
-  console.log('Using Vercel Postgres');
-  // Lazy load @vercel/postgres only when needed
-  vercelSql = require('@vercel/postgres').sql;
-}
-
 // SQL query function that works with both local PostgreSQL and Vercel Postgres
 async function sql(strings: TemplateStringsArray, ...values: any[]) {
-  if (isLocalPostgres && pgPool) {
-    // Use pg for local PostgreSQL
-    const query = strings.reduce((acc, str, i) => {
-      return acc + str + (i < values.length ? `$${i + 1}` : '');
-    }, '');
-    const result = await pgPool.query(query, values);
-    return { rows: result.rows, rowCount: result.rowCount || 0 };
-  } else {
-    // Use @vercel/postgres for Vercel Postgres
-    if (!vercelSql) {
-      vercelSql = require('@vercel/postgres').sql;
+  // Check at runtime if using local PostgreSQL
+  if (isLocalPostgres()) {
+    const postgresUrl = getPostgresUrl();
+    if (!pgPool && postgresUrl) {
+      console.log('Using local PostgreSQL with pg driver');
+      pgPool = new Pool({
+        connectionString: postgresUrl,
+      });
     }
+    if (pgPool) {
+      // Use pg for local PostgreSQL
+      const query = strings.reduce((acc, str, i) => {
+        return acc + str + (i < values.length ? `$${i + 1}` : '');
+      }, '');
+      const result = await pgPool.query(query, values);
+      return { rows: result.rows, rowCount: result.rowCount || 0 };
+    }
+  }
+  
+  // Use @vercel/postgres for Vercel Postgres (or fallback)
+  if (!vercelSql) {
+    try {
+      console.log('Using Vercel Postgres');
+      // @vercel/postgres automatically reads POSTGRES_URL from environment
+      // Log environment check for debugging
+      const postgresUrl = getPostgresUrl();
+      const envVars = Object.keys(process.env).filter(k => k.includes('POSTGRES')).join(', ') || 'none';
+      console.log('Postgres connection check:', {
+        hasPostgresUrl: !!postgresUrl,
+        hasEnvVar: !!process.env.POSTGRES_URL,
+        foundEnvVars: envVars,
+        isVercel: !!process.env.VERCEL
+      });
+      
+      vercelSql = require('@vercel/postgres').sql;
+    } catch (error) {
+      throw new Error(
+        'Failed to load @vercel/postgres. Make sure @vercel/postgres is installed and POSTGRES_URL is set in Vercel environment variables.'
+      );
+    }
+  }
+  
+  try {
+    // @vercel/postgres automatically reads POSTGRES_URL from environment
     return vercelSql(strings, ...values);
+  } catch (error: any) {
+    if (error?.code === 'missing_connection_string' || error?.message?.includes('POSTGRES_URL')) {
+      const envVars = Object.keys(process.env).filter(k => k.includes('POSTGRES')).join(', ') || 'none';
+      throw new Error(
+        `Database connection not configured. POSTGRES_URL environment variable is missing.\n` +
+        `Found Postgres-related env vars: ${envVars}\n` +
+        `Please ensure POSTGRES_URL is set in Vercel project settings:\n` +
+        `1. Go to your Vercel project dashboard\n` +
+        `2. Navigate to Settings → Environment Variables\n` +
+        `3. Verify POSTGRES_URL exists and is available for Production environment\n` +
+        `4. If using Vercel Postgres, it should be automatically configured when you create the database.\n` +
+        `5. After setting/changing environment variables, you MUST redeploy for changes to take effect.\n\n` +
+        `Debug info: Check Vercel function logs to see which environment variables are actually available at runtime.`
+      );
+    }
+    throw error;
   }
 }
 
 // Initialize database schema
 export async function initDatabase() {
+  // Don't check for POSTGRES_URL here - @vercel/postgres will handle it automatically
+  // If it's missing, the sql() function will catch it with a better error message
   try {
     // Create sheets table
     await sql`
@@ -166,12 +213,21 @@ export async function initDatabase() {
     `;
     
     // Check if image_data column exists, add it if missing (migration)
+    // This is safe to run multiple times - IF NOT EXISTS prevents errors
     try {
       await sql`
         ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT
       `;
-    } catch (alterError) {
-      // Column might already exist or there's a different issue, continue
+      console.log('✅ image_data column migration check completed');
+    } catch (alterError: any) {
+      // If column already exists, PostgreSQL might throw an error
+      // Check if it's a "duplicate column" error - that's OK
+      if (alterError?.code === '42701' || alterError?.message?.includes('already exists')) {
+        console.log('✅ image_data column already exists');
+      } else {
+        console.warn('⚠️ Could not verify image_data column:', alterError?.message);
+        // Continue anyway - createSheet has fallback logic
+      }
     }
 
     // Create index for faster searches
@@ -258,15 +314,15 @@ function rowToSheet(row: any): ChordSheet {
       };
     });
 
-    return {
-      id: row.id,
+  return {
+    id: row.id,
       title: row.title || 'Untitled Song',
-      titleEn: row.title_en || undefined,
+    titleEn: row.title_en || undefined,
       artist: row.artist || 'Unknown Artist',
-      artistEn: row.artist_en || undefined,
+    artistEn: row.artist_en || undefined,
       language: (row.language as 'he' | 'en') || 'en',
-      key: row.key || undefined,
-      tempo: row.tempo || undefined,
+    key: row.key || undefined,
+    tempo: row.tempo || undefined,
       capo: row.capo !== null && row.capo !== undefined ? row.capo : undefined,
       sections,
       dateAdded: row.date_added || new Date().toISOString().split('T')[0],
@@ -331,7 +387,23 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
 
-    // Try INSERT with image_data first, fallback to without if column doesn't exist
+    // Ensure image_data column exists before inserting
+    try {
+      await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
+    } catch (migrationError: any) {
+      // Ignore "column already exists" errors
+      if (migrationError?.code === '42701' || migrationError?.message?.includes('already exists')) {
+        // Column already exists, that's fine
+      } else if (migrationError?.code === 'missing_connection_string' || migrationError?.message?.includes('POSTGRES_URL')) {
+        // Database connection issue - re-throw to show proper error
+        throw migrationError;
+      } else {
+        // Other errors - log but don't fail
+        console.warn('Could not ensure image_data column exists:', migrationError?.message);
+      }
+    }
+
+    // Try INSERT with image_data
     try {
       await sql`
         INSERT INTO sheets (
@@ -354,49 +426,25 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
     } catch (insertError: any) {
       // If error is about missing column, try without image_data
       if (insertError?.code === '42703' || (insertError?.message && insertError.message.includes('image_data'))) {
-        // Try to add the column first (migration on-the-fly)
-        try {
-          await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
-          
-          // Retry with image_data
-          await sql`
-            INSERT INTO sheets (
-              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
-            ) VALUES (
-              ${truncatedSheet.id},
-              ${truncatedSheet.title},
-              ${truncatedSheet.titleEn || null},
-              ${truncatedSheet.artist},
-              ${truncatedSheet.artistEn || null},
-              ${truncatedSheet.language},
-              ${truncatedSheet.key || null},
-              ${truncatedSheet.tempo || null},
-              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-              ${JSON.stringify(truncatedSheet.sections)},
-              ${truncatedSheet.dateAdded},
-              ${truncatedSheet.imageData || null}
-            )
-          `;
-        } catch (retryError) {
-          // If adding column failed, try INSERT without image_data as last resort
-          await sql`
-            INSERT INTO sheets (
-              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
-            ) VALUES (
-              ${truncatedSheet.id},
-              ${truncatedSheet.title},
-              ${truncatedSheet.titleEn || null},
-              ${truncatedSheet.artist},
-              ${truncatedSheet.artistEn || null},
-              ${truncatedSheet.language},
-              ${truncatedSheet.key || null},
-              ${truncatedSheet.tempo || null},
-              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-              ${JSON.stringify(truncatedSheet.sections)},
-              ${truncatedSheet.dateAdded}
-            )
-          `;
-        }
+        console.warn('image_data column missing, inserting without it');
+        // Fallback: INSERT without image_data
+    await sql`
+      INSERT INTO sheets (
+        id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
+      ) VALUES (
+            ${truncatedSheet.id},
+            ${truncatedSheet.title},
+            ${truncatedSheet.titleEn || null},
+            ${truncatedSheet.artist},
+            ${truncatedSheet.artistEn || null},
+            ${truncatedSheet.language},
+            ${truncatedSheet.key || null},
+            ${truncatedSheet.tempo || null},
+            ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+            ${JSON.stringify(truncatedSheet.sections)},
+            ${truncatedSheet.dateAdded}
+          )
+        `;
       } else {
         // Different error, re-throw
         throw insertError;
@@ -426,21 +474,63 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
 
+    // Ensure image_data column exists before updating
+    try {
+      await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
+    } catch (migrationError: any) {
+      // Ignore "column already exists" errors
+      if (migrationError?.code === '42701' || migrationError?.message?.includes('already exists')) {
+        // Column already exists, that's fine
+      } else if (migrationError?.code === 'missing_connection_string' || migrationError?.message?.includes('POSTGRES_URL')) {
+        // Database connection issue - re-throw to show proper error
+        throw migrationError;
+      } else {
+        // Other errors - log but don't fail
+        console.warn('Could not ensure image_data column exists:', migrationError?.message);
+      }
+    }
+
+    // Try UPDATE with image_data
+    try {
+      await sql`
+        UPDATE sheets SET
+          title = ${truncatedSheet.title},
+          title_en = ${truncatedSheet.titleEn || null},
+          artist = ${truncatedSheet.artist},
+          artist_en = ${truncatedSheet.artistEn || null},
+          language = ${truncatedSheet.language},
+          key = ${truncatedSheet.key || null},
+          tempo = ${truncatedSheet.tempo || null},
+          capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+          sections = ${JSON.stringify(truncatedSheet.sections)},
+          image_data = ${truncatedSheet.imageData || null},
+          updated_at = NOW()
+        WHERE id = ${truncatedSheet.id}
+      `;
+    } catch (updateError: any) {
+      // If error is about missing column, try without image_data
+      if (updateError?.code === '42703' || (updateError?.message && updateError.message.includes('image_data'))) {
+        console.warn('image_data column missing, updating without it');
+        // Fallback: UPDATE without image_data
     await sql`
       UPDATE sheets SET
-        title = ${truncatedSheet.title},
-        title_en = ${truncatedSheet.titleEn || null},
-        artist = ${truncatedSheet.artist},
-        artist_en = ${truncatedSheet.artistEn || null},
-        language = ${truncatedSheet.language},
-        key = ${truncatedSheet.key || null},
-        tempo = ${truncatedSheet.tempo || null},
-        capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-        sections = ${JSON.stringify(truncatedSheet.sections)},
-        image_data = ${truncatedSheet.imageData || null},
+            title = ${truncatedSheet.title},
+            title_en = ${truncatedSheet.titleEn || null},
+            artist = ${truncatedSheet.artist},
+            artist_en = ${truncatedSheet.artistEn || null},
+            language = ${truncatedSheet.language},
+            key = ${truncatedSheet.key || null},
+            tempo = ${truncatedSheet.tempo || null},
+            capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+            sections = ${JSON.stringify(truncatedSheet.sections)},
         updated_at = NOW()
-      WHERE id = ${truncatedSheet.id}
-    `;
+          WHERE id = ${truncatedSheet.id}
+        `;
+      } else {
+        // Different error, re-throw
+        throw updateError;
+      }
+    }
     return truncatedSheet;
   } catch (error) {
     console.error('Error updating sheet:', error);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ChordSheet } from '@/types';
 import { getSheetById, updateSheet, deleteSheet } from '@/lib/db';
+import { validateChordSheetStrict } from '@/lib/strict-chord-validator';
 
 // GET /api/sheets/[id] - Get a specific sheet
 export async function GET(
@@ -39,14 +40,30 @@ export async function PUT(
     }
     
     const body = await request.json();
-    const updatedSheet: ChordSheet = { ...existingSheet, ...body, id };
-    const result = await updateSheet(updatedSheet);
-    return NextResponse.json(result);
+    
+    // Apply STRICT chord validation before updating
+    try {
+      const validatedSheet = validateChordSheetStrict({
+        ...existingSheet,
+        ...body,
+        id,
+      });
+      
+      const updatedSheet: ChordSheet = validatedSheet as ChordSheet;
+      const result = await updateSheet(updatedSheet);
+      return NextResponse.json(result);
+    } catch (validationError: any) {
+      console.error('Validation error:', validationError);
+      return NextResponse.json(
+        { error: 'Validation failed', details: validationError.message || 'Invalid chord sheet data' },
+        { status: 400 }
+      );
+    }
   } catch (error: any) {
     console.error('Error updating sheet:', error);
     return NextResponse.json(
-      { error: 'Failed to update sheet', details: error.message },
-      { status: 400 }
+      { error: 'Failed to update sheet', details: error.message || String(error) },
+      { status: error.message?.includes('not found') ? 404 : 500 }
     );
   }
 }

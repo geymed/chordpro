@@ -32,20 +32,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Apply STRICT chord validation before saving
-    const validatedSheet = validateChordSheetStrict({
-      ...body,
-      id: body.id || `sheet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      dateAdded: body.dateAdded || new Date().toISOString().split('T')[0],
-    });
+    try {
+      const validatedSheet = validateChordSheetStrict({
+        ...body,
+        id: body.id || `sheet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        dateAdded: body.dateAdded || new Date().toISOString().split('T')[0],
+      });
 
-    const newSheet: ChordSheet = validatedSheet as ChordSheet;
-    const created = await createSheet(newSheet);
-    return NextResponse.json(created, { status: 201 });
+      const newSheet: ChordSheet = validatedSheet as ChordSheet;
+      const created = await createSheet(newSheet);
+      return NextResponse.json(created, { status: 201 });
+    } catch (validationError: any) {
+      console.error('Validation error:', validationError);
+      return NextResponse.json(
+        { error: 'Validation failed', details: validationError.message || 'Invalid chord sheet data' },
+        { status: 400 }
+      );
+    }
   } catch (error: any) {
     console.error('Error creating sheet:', error);
     return NextResponse.json(
       { error: 'Failed to create sheet', details: error.message },
-      { status: 400 }
+      { status: 500 }
     );
   }
 }

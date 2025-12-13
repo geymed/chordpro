@@ -42,14 +42,35 @@ export default function Home() {
     <div className="min-h-screen bg-wood text-parchment font-sans">
       <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-12">
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-6xl font-vintage font-bold text-parchment mb-2">ChordVault</h1>
-          <p className="text-parchment/80 text-lg">Your personal guitar chord sheet library</p>
+        <div className="mb-12">
+          <div className="flex items-center justify-center gap-6" style={{ transform: 'translateX(-10%)' }}>
+            <pre className="text-parchment text-xs leading-tight whitespace-pre flex-shrink-0" style={{ fontFamily: 'monospace', marginTop: '-0.5rem' }}>
+{`⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⢶⠲⠐
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡤⠊⠊⢀⠐⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣀⠄⠚⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣼⣿⠟⠁⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣶⢻⠟⠁⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣀⠀⠀⠀⢀⣴⣿⡽⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⢠⣼⣿⡟⠀⠀⣠⣼⣿⡾⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢀⣿⣿⣿⣷⣀⣾⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⢀⣤⣾⣿⡿⠃⣼⣿⡿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⢀⣴⣾⣿⣿⠟⠋⠋⠀⠙⠝⠻⡂⠀⢀⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⢰⣿⣿⣿⣿⡇⠀⡀⠙⢆⡀⠀⠀⠉⠉⣡⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⢿⣿⣿⣿⣿⣿⣦⡀⢀⠀⠠⢀⡤⠚⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠘⢻⣿⣿⣿⣿⣿⣿⡌⠀⠀⡜⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠩⢿⣿⣿⣿⣻⣿⠀⣼⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠙⠿⢿⣾⡿⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`}
+            </pre>
+            <div className="flex flex-col items-center">
+              <h1 className="text-6xl font-vintage font-bold text-parchment leading-none">ChordVault</h1>
+              <p className="text-parchment/80 text-lg mt-1" style={{ lineHeight: '1.2' }}>Your personal guitar chord sheet library</p>
+            </div>
+          </div>
         </div>
 
         {/* New Header/Action Bar */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-vintage font-bold text-parchment">My Song Library 🎸</h1>
+          <h1 className="text-4xl font-vintage font-bold text-parchment">My Song Library</h1>
           <div className="flex gap-4">
             <Link
               href="/upload/image"

@@ -182,7 +182,7 @@ export default function SheetPage() {
 
               return (
                 <div key={section.id} className="space-y-4" dir={sectionIsRTL ? 'rtl' : 'ltr'} style={{ direction: sectionIsRTL ? 'rtl' : 'ltr' }}>
-                  <h2 className="text-gray-800 font-vintage font-bold text-xl mb-4 tracking-wide uppercase" dir={labelIsRTL ? 'rtl' : 'ltr'} style={{ direction: labelIsRTL ? 'rtl' : 'ltr', textAlign: labelIsRTL ? 'right' : 'left', width: '100%' }}>{section.label}</h2>
+                  <h2 className="text-gray-500 font-vintage font-semibold text-lg mb-4 tracking-wide uppercase italic" dir={labelIsRTL ? 'rtl' : 'ltr'} style={{ direction: labelIsRTL ? 'rtl' : 'ltr', textAlign: labelIsRTL ? 'right' : 'left', width: '100%', color: '#8b7355' }}>{section.label}</h2>
                   {section.lines.map((line, lineIdx) => (
                     <ChordLine
                       key={lineIdx}

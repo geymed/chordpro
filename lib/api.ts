@@ -21,7 +21,10 @@ export async function createSheet(sheet: Omit<ChordSheet, 'id' | 'dateAdded'>): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(sheet),
   });
-  if (!response.ok) throw new Error('Failed to create sheet');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(errorData.error || errorData.details || 'Failed to create sheet');
+  }
   return response.json();
 }
 
@@ -31,7 +34,10 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(sheet),
   });
-  if (!response.ok) throw new Error('Failed to update sheet');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(errorData.error || errorData.details || 'Failed to update sheet');
+  }
   return response.json();
 }
 

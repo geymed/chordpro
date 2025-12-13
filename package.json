@@ -11,16 +11,12 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@google-cloud/vision": "^5.3.4",
     "@google/generative-ai": "^0.21.0",
     "@vercel/postgres": "^0.5.1",
     "adm-zip": "^0.5.10",
     "axios": "^1.13.2",
-    "canvas": "^2.11.2",
     "cheerio": "^1.1.2",
     "next": "latest",
-    "pdf-parse": "^2.4.5",
-    "pdf2pic": "^3.2.0",
     "pg": "^8.16.3",
     "react": "latest",
     "react-dom": "latest",

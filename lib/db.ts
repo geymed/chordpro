@@ -136,8 +136,32 @@ async function sql(strings: TemplateStringsArray, ...values: any[]) {
   const isNeon = postgresUrl.includes('neon.tech');
   const isSupabase = postgresUrl.includes('supabase.co') || postgresUrl.includes('supabase.com');
   
-  // For Vercel Postgres, try @vercel/postgres first (it handles the connection automatically)
-  if (usingVercelPostgres && !vercelSql) {
+  // Log connection details for debugging (masked for security)
+  if (postgresUrl) {
+    const maskedUrl = postgresUrl.replace(/:([^:@]+)@/, ':****@');
+    console.log('🔌 Connection details:', {
+      hasUrl: !!postgresUrl,
+      provider: isSupabase ? 'Supabase' : isNeon ? 'Neon' : usingVercelPostgres ? 'Vercel Postgres' : 'PostgreSQL',
+      urlPreview: maskedUrl.substring(0, 80) + '...',
+      isSupabase,
+      isNeon,
+      usingVercelPostgres,
+      envVars: {
+        POSTGRES_URL: !!process.env.POSTGRES_URL,
+        POSTGRES_PRISMA_URL: !!process.env.POSTGRES_PRISMA_URL,
+        POSTGRES_URL_NON_POOLING: !!process.env.POSTGRES_URL_NON_POOLING,
+        POSTGRES_HOST: !!process.env.POSTGRES_HOST
+      }
+    });
+  }
+  
+  // IMPORTANT: For Supabase, always use pg directly (don't use @vercel/postgres)
+  // @vercel/postgres only works with Vercel Postgres, not Supabase
+  if (isSupabase) {
+    console.log('✅ Detected Supabase, using pg driver directly (bypassing @vercel/postgres)');
+    // Skip @vercel/postgres and go straight to pg
+  } else if (usingVercelPostgres && !vercelSql) {
+    // Only use @vercel/postgres for actual Vercel Postgres (not Supabase)
     try {
       console.log('Detected Vercel Postgres, using @vercel/postgres');
       vercelSql = require('@vercel/postgres').sql;
@@ -146,17 +170,36 @@ async function sql(strings: TemplateStringsArray, ...values: any[]) {
     }
   }
   
-  // Try @vercel/postgres if available
-  if (vercelSql && usingVercelPostgres) {
+  // Try @vercel/postgres only if NOT Supabase and it's available
+  if (vercelSql && usingVercelPostgres && !isSupabase) {
     try {
       return vercelSql(strings, ...values);
     } catch (error: any) {
       console.error('@vercel/postgres error:', {
         code: error?.code,
         message: error?.message,
-        name: error?.name
+        name: error?.name,
+        stack: error?.stack?.split('\n')[0]
       });
-      // Fall through to pg if @vercel/postgres fails
+      
+      // If we get a 404, the database might not exist or be inactive
+      if (error?.message?.includes('404') || error?.name === 'NeonDbError') {
+        throw new Error(
+          `Vercel Postgres connection failed (404). This usually means:\n` +
+          `1. The database doesn't exist in your Vercel project\n` +
+          `2. The database is paused or inactive\n` +
+          `3. The database was deleted\n\n` +
+          `To fix this:\n` +
+          `1. Go to your Vercel project dashboard\n` +
+          `2. Navigate to the "Storage" tab\n` +
+          `3. Check if a Postgres database exists\n` +
+          `4. If not, create a new Postgres database\n` +
+          `5. If it exists but is paused, resume it\n\n` +
+          `Original error: ${error?.message || error?.name || 'Unknown error'}`
+        );
+      }
+      
+      // Fall through to pg if @vercel/postgres fails with other errors
       console.log('Falling back to pg driver');
     }
   }
@@ -171,13 +214,41 @@ async function sql(strings: TemplateStringsArray, ...values: any[]) {
         // Add connection pool settings for serverless
         max: 1, // Limit connections for serverless
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
+        connectionTimeoutMillis: 30000, // Increased timeout for local connections
       };
       
-      // Supabase requires SSL
+      // For Supabase, try to use direct connection if pooler is timing out
+      if (isSupabase && postgresUrl.includes('pooler')) {
+        // Check if we have a direct connection string available
+        const directUrl = process.env.POSTGRES_URL_NON_POOLING || 
+                         postgresUrl.replace('pooler.supabase.com:6543', 'supabase.co:5432')
+                                    .replace('?sslmode=require&supa=base-pooler.x', '?sslmode=require');
+        if (directUrl !== postgresUrl) {
+          console.log('Supabase pooler detected, trying direct connection instead...');
+          poolConfig.connectionString = directUrl;
+        }
+      }
+      
+      // Supabase requires SSL - handle certificate validation
       if (isSupabase) {
-        poolConfig.ssl = { rejectUnauthorized: false };
-        console.log('Configured SSL for Supabase connection');
+        // For Supabase, we need to accept their SSL certificate
+        // rejectUnauthorized: false allows self-signed certificates in the chain
+        poolConfig.ssl = {
+          rejectUnauthorized: false
+        };
+        console.log('Configured SSL for Supabase connection (accepting self-signed cert)');
+        
+        // Also ensure the connection string doesn't override our SSL settings
+        // Remove sslmode and other query params from connection string if present
+        if (poolConfig.connectionString.includes('?')) {
+          const [baseUrl, queryParams] = poolConfig.connectionString.split('?');
+          // Keep only essential params, remove sslmode (we handle it via poolConfig)
+          const params = new URLSearchParams(queryParams);
+          params.delete('sslmode');
+          const newQuery = params.toString();
+          poolConfig.connectionString = newQuery ? `${baseUrl}?${newQuery}` : baseUrl;
+          console.log('Cleaned connection string query parameters');
+        }
       }
       
       // Neon-specific: use non-pooling connection string if available

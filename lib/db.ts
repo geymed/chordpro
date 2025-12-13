@@ -146,7 +146,19 @@ async function sql(strings: TemplateStringsArray, ...values: any[]) {
   if (!vercelSql) {
     try {
       console.log('Using Vercel Postgres');
-      // @vercel/postgres automatically reads POSTGRES_URL from environment
+      
+      // Workaround: @vercel/postgres requires POSTGRES_URL specifically
+      // If it's not set but we have another Postgres URL, use it
+      if (!process.env.POSTGRES_URL) {
+        const alternativeUrl = process.env.POSTGRES_PRISMA_URL || 
+                              process.env.POSTGRES_URL_NON_POOLING ||
+                              process.env.DATABASE_URL;
+        if (alternativeUrl) {
+          console.log('Setting POSTGRES_URL from alternative environment variable');
+          process.env.POSTGRES_URL = alternativeUrl;
+        }
+      }
+      
       // Log environment check for debugging
       const postgresUrl = getPostgresUrl();
       const envVars = Object.keys(process.env).filter(k => k.includes('POSTGRES')).join(', ') || 'none';
@@ -342,15 +354,46 @@ function rowToSheet(row: any): ChordSheet {
   }
 }
 
+// Track if database has been initialized
+let dbInitialized = false;
+
 // Get all sheets
 export async function getAllSheets(): Promise<ChordSheet[]> {
   try {
+    // Auto-initialize database on first use if not already initialized
+    if (!dbInitialized) {
+      try {
+        await initDatabase();
+        dbInitialized = true;
+      } catch (initError) {
+        console.warn('Auto-initialization failed, continuing anyway:', initError);
+        // Don't block - might already be initialized
+      }
+    }
+    
     const { rows } = await sql`
       SELECT * FROM sheets
       ORDER BY date_added DESC, created_at DESC
     `;
     return rows.map(rowToSheet);
-  } catch (error) {
+  } catch (error: any) {
+    // If table doesn't exist, try to initialize and retry
+    if (error?.code === '42P01' || error?.message?.includes('does not exist') || error?.message?.includes('relation') && error?.message?.includes('does not exist')) {
+      console.log('Table not found, attempting to initialize database...');
+      try {
+        await initDatabase();
+        dbInitialized = true;
+        // Retry the query
+        const { rows } = await sql`
+          SELECT * FROM sheets
+          ORDER BY date_added DESC, created_at DESC
+        `;
+        return rows.map(rowToSheet);
+      } catch (retryError) {
+        console.error('Error after initialization retry:', retryError);
+        throw retryError;
+      }
+    }
     console.error('Error fetching sheets:', error);
     throw error;
   }
@@ -372,7 +415,22 @@ export async function getSheetById(id: string): Promise<ChordSheet | null> {
 
 // Create a new sheet
 export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
+  // Auto-initialize database on first use if not already initialized
+  if (!dbInitialized) {
+    try {
+      console.log('Auto-initializing database before createSheet...');
+      await initDatabase();
+      dbInitialized = true;
+      console.log('Database initialized successfully');
+    } catch (initError: any) {
+      console.error('Auto-initialization failed:', initError?.message || initError);
+      // Don't block - might already be initialized, but log the error
+      dbInitialized = false; // Reset so we can try again
+    }
+  }
+  
   try {
+    console.log('Creating sheet with ID:', sheet.id);
     // Validate and fix chord names before saving
     const validatedSheet = validateAndFixChordSheet(sheet);
 
@@ -405,6 +463,7 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
 
     // Try INSERT with image_data
     try {
+      console.log('Attempting INSERT with image_data column...');
       await sql`
         INSERT INTO sheets (
           id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
@@ -423,12 +482,14 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
           ${truncatedSheet.imageData || null}
         )
       `;
+      console.log('Sheet created successfully with image_data');
     } catch (insertError: any) {
+      console.error('INSERT error:', insertError?.code, insertError?.message);
       // If error is about missing column, try without image_data
       if (insertError?.code === '42703' || (insertError?.message && insertError.message.includes('image_data'))) {
         console.warn('image_data column missing, inserting without it');
         // Fallback: INSERT without image_data
-    await sql`
+        await sql`
       INSERT INTO sheets (
         id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
       ) VALUES (
@@ -445,14 +506,43 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
             ${truncatedSheet.dateAdded}
           )
         `;
+        console.log('Sheet created successfully without image_data');
       } else {
-        // Different error, re-throw
+        // Different error, re-throw with more context
+        console.error('INSERT failed with error:', {
+          code: insertError?.code,
+          message: insertError?.message,
+          detail: insertError?.detail
+        });
         throw insertError;
       }
     }
     return truncatedSheet;
-  } catch (error) {
-    console.error('Error creating sheet:', error);
+  } catch (error: any) {
+    // If table doesn't exist, try to initialize and retry
+    if (error?.code === '42P01' || (error?.message?.includes('does not exist') && error?.message?.includes('relation'))) {
+      console.log('Table not found, attempting to initialize database...');
+      try {
+        await initDatabase();
+        dbInitialized = true;
+        // Retry the create operation
+        console.log('Retrying createSheet after initialization...');
+        return await createSheet(sheet);
+      } catch (retryError: any) {
+        console.error('Error after initialization retry:', {
+          code: retryError?.code,
+          message: retryError?.message,
+          detail: retryError?.detail
+        });
+        throw retryError;
+      }
+    }
+    console.error('Error creating sheet:', {
+      code: error?.code,
+      message: error?.message,
+      detail: error?.detail,
+      stack: error?.stack
+    });
     throw error;
   }
 }

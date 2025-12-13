@@ -652,19 +652,27 @@ function ImageUploadPageContent() {
 
             if (editId) {
                 // Update existing sheet
-                const existingSheet = await getSheet(editId);
-                if (!existingSheet) {
-                    throw new Error('Sheet not found');
+                try {
+                    const existingSheet = await getSheet(editId);
+                    if (!existingSheet) {
+                        throw new Error(`Sheet with ID "${editId}" not found. It may have been deleted or the database may not be initialized.`);
+                    }
+                    const updatedSheet: ChordSheet = {
+                        ...existingSheet,
+                        title,
+                        artist,
+                        sections,
+                        language: hasHebrew ? 'he' : 'en',
+                        imageData: imageData || existingSheet.imageData,
+                    };
+                    await updateSheet(updatedSheet);
+                } catch (updateError: any) {
+                    // If update fails with 404, it means the sheet doesn't exist
+                    if (updateError?.message?.includes('404') || updateError?.message?.includes('not found')) {
+                        throw new Error(`Cannot update: Sheet with ID "${editId}" not found. It may have been deleted. Try creating a new song instead.`);
+                    }
+                    throw updateError;
                 }
-                const updatedSheet: ChordSheet = {
-                    ...existingSheet,
-                    title,
-                    artist,
-                    sections,
-                    language: hasHebrew ? 'he' : 'en',
-                    imageData: imageData || existingSheet.imageData,
-                };
-                await updateSheet(updatedSheet);
             } else {
                 // Create new sheet
             const newSheet: Omit<ChordSheet, 'id' | 'dateAdded'> = {

@@ -43,10 +43,32 @@ export async function POST(request: NextRequest) {
       const created = await createSheet(newSheet);
       return NextResponse.json(created, { status: 201 });
     } catch (validationError: any) {
-      console.error('Validation error:', validationError);
+      console.error('Error creating sheet (validation or database):', validationError);
+      
+      // Check if it's a database connection error
+      if (validationError?.message?.includes('POSTGRES_URL') || 
+          validationError?.message?.includes('Database') ||
+          validationError?.message?.includes('connection')) {
+        return NextResponse.json(
+          { 
+            error: 'Database connection failed', 
+            details: validationError.message || 'Database is not configured. Please ensure POSTGRES_URL is set and the database is initialized.',
+            hint: 'Visit /api/init-db to initialize the database schema'
+          },
+          { status: 500 }
+        );
+      }
+      
+      // Check if it's a validation error (from validateChordSheetStrict)
+      // Note: validateChordSheetStrict doesn't throw, so this is likely a database error
       return NextResponse.json(
-        { error: 'Validation failed', details: validationError.message || 'Invalid chord sheet data' },
-        { status: 400 }
+        { 
+          error: 'Failed to create sheet', 
+          details: validationError.message || 'Unknown error occurred',
+          errorType: validationError?.code || 'unknown',
+          stack: process.env.NODE_ENV === 'development' ? validationError.stack : undefined
+        },
+        { status: 500 }
       );
     }
   } catch (error: any) {

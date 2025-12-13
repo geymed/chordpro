@@ -16,17 +16,23 @@ export interface Chord {
   explicitMaj?: boolean; // True if "maj" was explicitly present (e.g., "Cmaj7" vs "C7")
 }
 
+export interface ChordWord {
+  word: string;
+  chord?: string;  // Optional chord for this word
+}
+
 export interface ChordLine {
-  chords: (Chord | string)[]; // Support both structured Chord and string for backward compatibility
-  lyrics: string;
+  words: ChordWord[];  // Array of word-chord pairs
 }
 
 export interface Section {
   id: string;
-  type: 'verse' | 'chorus' | 'bridge' | 'intro' | 'outro';
+  type?: 'verse' | 'chorus' | 'bridge' | 'intro' | 'outro';
   label: string;
   lines: ChordLine[];
 }
+
+export type ChordSection = Section;
 
 export interface ChordSheet {
   id: string;
@@ -40,5 +46,7 @@ export interface ChordSheet {
   capo?: number;
   sections: Section[];
   dateAdded: string;
+  imagePath?: string;
+  imageData?: string;  // Base64 encoded image for reference
 }
 

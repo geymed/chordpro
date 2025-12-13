@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-export default function AutoScrollControl() {
+interface AutoScrollControlProps {
+    targetId?: string;
+}
+
+export default function AutoScrollControl({ targetId }: AutoScrollControlProps) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [speed, setSpeed] = useState(1); // 1-10
     const scrollInterval = useRef<NodeJS.Timeout | null>(null);
@@ -10,16 +14,29 @@ export default function AutoScrollControl() {
     useEffect(() => {
         if (isPlaying) {
             scrollInterval.current = setInterval(() => {
+                let element: HTMLElement | Window = window;
+                let currentScroll = window.scrollY;
+                let maxScroll = document.body.offsetHeight - window.innerHeight;
+
+                if (targetId) {
+                    const el = document.getElementById(targetId);
+                    if (el) {
+                        element = el;
+                        currentScroll = el.scrollTop;
+                        maxScroll = el.scrollHeight - el.clientHeight;
+                    }
+                }
+
                 // Check if we reached the bottom
-                if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight) {
+                if (currentScroll >= maxScroll) {
                     setIsPlaying(false);
                     if (scrollInterval.current) clearInterval(scrollInterval.current);
                     return;
                 }
 
-                window.scrollBy({
+                element.scrollBy({
                     top: 1,
-                    behavior: 'auto' // 'smooth' can be jerky with frequent updates
+                    behavior: 'auto'
                 });
             }, 50 / speed); // Adjust interval based on speed
         } else {
@@ -33,15 +50,15 @@ export default function AutoScrollControl() {
                 clearInterval(scrollInterval.current);
             }
         };
-    }, [isPlaying, speed]);
+    }, [isPlaying, speed, targetId]);
 
     return (
         <div className="fixed bottom-6 right-6 bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-700 flex items-center gap-4 z-50">
             <button
                 onClick={() => setIsPlaying(!isPlaying)}
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${isPlaying
-                        ? 'bg-red-500 hover:bg-red-600 text-white'
-                        : 'bg-green-500 hover:bg-green-600 text-white'
+                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                    : 'bg-green-500 hover:bg-green-600 text-white'
                     }`}
             >
                 {isPlaying ? (

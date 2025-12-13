@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
-import { ChordSheet, Section, ChordLine, Chord } from '@/types';
-import { parseChord, chordToString, normalizeChord } from '@/lib/chord-utils';
+import { ChordSheet, Section } from '@/types';
 
 // Import validation functions from llm-analyzer
 // We'll define them here to avoid circular dependencies
@@ -15,7 +14,7 @@ function isValidChord(chord: string): boolean {
 
 function findClosestValidChord(invalidChord: string): string {
   const trimmed = invalidChord.trim();
-  
+
   // First, handle truncated "di" -> "dim" BEFORE any other processing
   // This must come first to catch cases like "G#di"
   if (/^[A-G][#b]?di$/i.test(trimmed)) {
@@ -24,9 +23,9 @@ function findClosestValidChord(invalidChord: string): string {
       return fixed;
     }
   }
-  
+
   let cleaned = trimmed.replace(/\s+/g, '').replace(/[^\w#\/]/g, '');
-  
+
   const fixes: { pattern: RegExp; replacement: string }[] = [
     // Fix "diminished" - handle truncated "di" -> "dim" (check again after cleaning)
     { pattern: /([A-G][#b]?)di$/i, replacement: '$1dim' },
@@ -39,16 +38,16 @@ function findClosestValidChord(invalidChord: string): string {
     { pattern: /([A-G])\s*flat/gi, replacement: '$1b' },
     { pattern: /[^A-G#bmajdimaugsusadd\/\d()]/gi, replacement: '' },
   ];
-  
+
   for (const fix of fixes) {
     cleaned = cleaned.replace(fix.pattern, fix.replacement);
   }
-  
+
   const rootMatch = cleaned.match(/^([A-G][#b]?)/i);
   if (rootMatch) {
     const root = rootMatch[1];
     const rest = cleaned.substring(rootMatch[0].length);
-    
+
     // Check if rest contains "dim" or "di" (truncated dim) - prioritize dim
     if (rest.match(/^di$/i) || rest.match(/^dim/i)) {
       const dimChord = root + 'dim';
@@ -56,9 +55,9 @@ function findClosestValidChord(invalidChord: string): string {
         return dimChord;
       }
     }
-    
+
     const commonPatterns = [root, root + 'm', root + 'dim', root + 'aug', root + '7', root + 'm7', root + 'maj7', root + '9', root + 'm9'];
-    
+
     for (const pattern of commonPatterns) {
       if (isValidChord(pattern)) {
         const slashMatch = rest.match(/\/([A-G][#b]?)/i);
@@ -75,46 +74,9 @@ function findClosestValidChord(invalidChord: string): string {
 }
 
 function validateAndFixChordSheet(sheet: ChordSheet): ChordSheet {
-  const fixedSheet: ChordSheet = {
-    ...sheet,
-    sections: sheet.sections.map((section) => ({
-      ...section,
-      lines: section.lines.map((line) => {
-        if (!Array.isArray(line.chords)) {
-          return { ...line, chords: [] };
-        }
-        const fixedChords = line.chords.map((chord) => {
-          // Handle both string and Chord object
-          let chordStr: string;
-          if (typeof chord === 'string') {
-            chordStr = chord;
-          } else if (chord && typeof chord === 'object' && 'note' in chord) {
-            chordStr = chordToString(chord);
-          } else {
-            chordStr = String(chord || '');
-          }
-          
-          if (!chordStr || chordStr.trim() === '') {
-            return '';
-          }
-          
-          // Fix invalid chords
-          const fixedChordStr = isValidChord(chordStr) ? chordStr : findClosestValidChord(chordStr);
-          
-          // Parse into Chord object
-          const parsed = parseChord(fixedChordStr);
-          return parsed || fixedChordStr; // Return Chord object if parsed successfully, otherwise string
-        });
-        return { ...line, chords: fixedChords };
-      })
-    }))
-  };
-  
-  if (fixedSheet.key && !isValidChord(fixedSheet.key)) {
-    fixedSheet.key = findClosestValidChord(fixedSheet.key);
-  }
-  
-  return fixedSheet;
+  // For now, we just return the sheet as is since we moved to string-based chords
+  // We can add string-based validation later if needed
+  return sheet;
 }
 
 // Load environment variables from .env.local if not in production
@@ -143,9 +105,9 @@ if (process.env.NODE_ENV !== 'production' && typeof window === 'undefined') {
 
 // Determine if we're using local PostgreSQL or Vercel Postgres
 const postgresUrl = process.env.POSTGRES_URL || '';
-const isLocalPostgres = postgresUrl.includes('localhost') || 
-                        postgresUrl.includes('127.0.0.1') ||
-                        (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com'));
+const isLocalPostgres = postgresUrl.includes('localhost') ||
+  postgresUrl.includes('127.0.0.1') ||
+  (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com'));
 
 // Create pg Pool for local PostgreSQL
 let pgPool: Pool | null = null;
@@ -197,6 +159,7 @@ export async function initDatabase() {
         capo INTEGER,
         sections JSONB NOT NULL,
         date_added DATE NOT NULL,
+        image_data TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -217,50 +180,101 @@ export async function initDatabase() {
 
 // Convert database row to ChordSheet
 function rowToSheet(row: any): ChordSheet {
-  // Normalize sections - parse chords into Chord objects
-  const sections: Section[] = (row.sections || []).map((section: any) => ({
-    ...section,
-    lines: (section.lines || []).map((line: any) => ({
-      ...line,
-      chords: (line.chords || []).map((chord: any) => {
-        // If it's already a Chord object (from JSON), validate and keep it
-        if (chord && typeof chord === 'object' && 'note' in chord) {
-          // Validate the Chord object structure
-          const chordObj = chord as Chord;
-          // Re-parse to ensure it's correct (handles any corruption)
-          const chordStr = chordToString(chordObj);
-          const reparsed = parseChord(chordStr);
-          return reparsed || chordObj; // Return reparsed if successful, otherwise keep original
-        }
-        
-        // If it's a string, parse it into a Chord object
-        if (typeof chord === 'string') {
-          if (!chord || chord.trim() === '') {
-            return '';
-          }
-          const parsed = parseChord(chord);
-          return parsed || chord; // Return Chord object if parsed successfully, otherwise keep string
-        }
-        
-        // If it's null/undefined, return empty string
-        return '';
-      })
-    }))
-  }));
+  try {
+    // Parse sections if it's a string (JSONB from database)
+    let sectionsData = row.sections;
+    if (typeof sectionsData === 'string') {
+      try {
+        sectionsData = JSON.parse(sectionsData);
+      } catch (e) {
+        console.error('Failed to parse sections JSON:', e);
+        sectionsData = [];
+      }
+    }
 
-  return {
-    id: row.id,
-    title: row.title,
-    titleEn: row.title_en || undefined,
-    artist: row.artist,
-    artistEn: row.artist_en || undefined,
-    language: row.language as 'he' | 'en',
-    key: row.key || undefined,
-    tempo: row.tempo || undefined,
-    capo: row.capo !== null ? row.capo : undefined,
-    sections,
-    dateAdded: row.date_added,
-  };
+    // Normalize sections - handle both old format (chords array) and new format (words array)
+    const sections: Section[] = (sectionsData || []).map((section: any, idx: number) => {
+      if (!section) {
+        return {
+          id: `section-${idx}`,
+          label: 'Untitled Section',
+          lines: []
+        };
+      }
+
+      const normalizedLines = (section.lines || []).map((line: any) => {
+        if (!line) {
+          return { words: [] };
+        }
+
+        // Handle new format: words array
+        if (Array.isArray(line.words)) {
+          return {
+            words: line.words.map((word: any) => {
+              // Ensure each word has the correct structure
+              if (typeof word === 'string') {
+                return { word };
+              }
+              if (word && typeof word === 'object') {
+                return {
+                  word: word.word || '',
+                  chord: word.chord || undefined
+                };
+              }
+              return { word: '' };
+            }).filter((w: any) => w.word !== undefined && w.word !== null)
+          };
+        }
+
+        // Handle old format: chords and lyrics arrays (backward compatibility)
+        if (Array.isArray(line.chords) && typeof line.lyrics === 'string') {
+          const lyrics = line.lyrics.split(/\s+/).filter((w: string) => w.trim());
+          return {
+            words: lyrics.map((word: string, idx: number) => ({
+              word,
+              chord: line.chords[idx] || undefined
+            }))
+          };
+        }
+
+        // Fallback: empty words array
+        return { words: [] };
+      });
+
+      return {
+        id: section.id || `section-${idx}`,
+        type: section.type,
+        label: section.label || 'Untitled Section',
+        lines: normalizedLines
+      };
+    });
+
+    return {
+      id: row.id,
+      title: row.title || 'Untitled Song',
+      titleEn: row.title_en || undefined,
+      artist: row.artist || 'Unknown Artist',
+      artistEn: row.artist_en || undefined,
+      language: (row.language as 'he' | 'en') || 'en',
+      key: row.key || undefined,
+      tempo: row.tempo || undefined,
+      capo: row.capo !== null && row.capo !== undefined ? row.capo : undefined,
+      sections,
+      dateAdded: row.date_added || new Date().toISOString().split('T')[0],
+      imageData: row.image_data || undefined,
+    };
+  } catch (error) {
+    console.error('Error converting row to sheet:', error, row);
+    // Return a minimal valid sheet to prevent crashes
+    return {
+      id: row.id || `sheet-${Date.now()}`,
+      title: row.title || 'Untitled Song',
+      artist: row.artist || 'Unknown Artist',
+      language: 'en',
+      sections: [],
+      dateAdded: row.date_added || new Date().toISOString().split('T')[0],
+    };
+  }
 }
 
 // Get all sheets
@@ -296,7 +310,7 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
   try {
     // Validate and fix chord names before saving
     const validatedSheet = validateAndFixChordSheet(sheet);
-    
+
     // Truncate string fields to fit database constraints
     const truncatedSheet = {
       ...validatedSheet,
@@ -307,10 +321,10 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
       key: validatedSheet.key ? validatedSheet.key.substring(0, 10) : undefined,
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
-    
+
     await sql`
       INSERT INTO sheets (
-        id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
+        id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
       ) VALUES (
         ${truncatedSheet.id},
         ${truncatedSheet.title},
@@ -322,7 +336,8 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
         ${truncatedSheet.tempo || null},
         ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
         ${JSON.stringify(truncatedSheet.sections)},
-        ${truncatedSheet.dateAdded}
+        ${truncatedSheet.dateAdded},
+        ${truncatedSheet.imageData || null}
       )
     `;
     return truncatedSheet;
@@ -337,7 +352,7 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
   try {
     // Validate and fix chord names before saving
     const validatedSheet = validateAndFixChordSheet(sheet);
-    
+
     // Truncate string fields to fit database constraints
     const truncatedSheet = {
       ...validatedSheet,
@@ -348,7 +363,7 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
       key: validatedSheet.key ? validatedSheet.key.substring(0, 10) : undefined,
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
-    
+
     await sql`
       UPDATE sheets SET
         title = ${truncatedSheet.title},
@@ -360,6 +375,7 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
         tempo = ${truncatedSheet.tempo || null},
         capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
         sections = ${JSON.stringify(truncatedSheet.sections)},
+        image_data = ${truncatedSheet.imageData || null},
         updated_at = NOW()
       WHERE id = ${truncatedSheet.id}
     `;

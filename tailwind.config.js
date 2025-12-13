@@ -6,7 +6,15 @@ module.exports = {
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        parchment: '#f5f4f2', // Off-white with subtle warm tint
+        wood: '#2a2825', // Near-black with warm undertone
+      },
+      fontFamily: {
+        vintage: ['var(--font-playfair)', 'serif'],
+      },
+    },
   },
   plugins: [],
 }

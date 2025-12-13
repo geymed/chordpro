@@ -84,3 +84,4 @@ export function validateChordSheetFileFromPath(filePath: string): boolean {
   }
 }
 
+

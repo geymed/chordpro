@@ -2,17 +2,15 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { getSheets, createSheet } from '@/lib/api';
+import { getSheets } from '@/lib/api';
 import { ChordSheet, Language } from '@/types';
 import SongCard from '@/components/SongCard';
-import AddSongModal from '@/components/AddSongModal';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [languageFilter, setLanguageFilter] = useState<Language | 'all'>('all');
   const [sheets, setSheets] = useState<ChordSheet[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const loadSheets = () => {
     setLoading(true);
@@ -41,46 +39,35 @@ export default function Home() {
   }, [sheets, searchQuery, languageFilter]);
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="min-h-screen bg-wood text-parchment font-sans">
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-12">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-6xl font-serif text-white mb-2">ChordVault</h1>
-          <p className="text-gray-400 text-lg">Your personal guitar chord sheet library</p>
+          <h1 className="text-6xl font-vintage font-bold text-parchment mb-2">ChordVault</h1>
+          <p className="text-parchment/80 text-lg">Your personal guitar chord sheet library</p>
         </div>
 
         {/* New Header/Action Bar */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-white">My Song Library 🎸</h1>
+          <h1 className="text-4xl font-vintage font-bold text-parchment">My Song Library 🎸</h1>
           <div className="flex gap-4">
-            {/* Show Local Studio ONLY in development */}
-            {process.env.NODE_ENV !== 'production' && (
-              <Link
-                href="/studio"
-                className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 border border-gray-700"
-              >
-                <span>🎙️</span>
-                <span>Local Studio</span>
-              </Link>
-            )}
+            <Link
+              href="/upload/image"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
+            >
+              <span>📷</span>
+              <span>Import from Image</span>
+            </Link>
 
-            {/* Show Upload button in production (or both for convenience) */}
             <Link
               href="/upload"
-              className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 border border-gray-700"
+              className="bg-parchment hover:bg-white text-wood px-4 py-2 rounded-md transition-colors flex items-center gap-2 font-medium"
             >
               <span>📤</span>
-              <span>Upload</span>
+              <span>Upload JSON</span>
             </Link>
           </div>
         </div>
-
-        {/* Add Song Modal */}
-        <AddSongModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={loadSheets}
-        />
 
         {/* Search and Filters */}
         <div className="mb-8 space-y-4">
@@ -89,33 +76,33 @@ export default function Home() {
             placeholder="Search by title or artist..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-700 focus:outline-none focus:border-yellow-400"
+            className="w-full bg-white text-gray-900 px-4 py-3 rounded-md border border-gray-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
 
           <div className="flex gap-2">
             <button
               onClick={() => setLanguageFilter('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'all'
-                ? 'bg-yellow-400 text-black'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${languageFilter === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-parchment text-wood hover:bg-white'
                 }`}
             >
               All Languages
             </button>
             <button
               onClick={() => setLanguageFilter('he')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'he'
-                ? 'bg-yellow-400 text-black'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${languageFilter === 'he'
+                ? 'bg-blue-600 text-white'
+                : 'bg-parchment text-wood hover:bg-white'
                 }`}
             >
               עברית
             </button>
             <button
               onClick={() => setLanguageFilter('en')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${languageFilter === 'en'
-                ? 'bg-yellow-400 text-black'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${languageFilter === 'en'
+                ? 'bg-blue-600 text-white'
+                : 'bg-parchment text-wood hover:bg-white'
                 }`}
             >
               English
@@ -125,8 +112,8 @@ export default function Home() {
 
         {/* Song Grid */}
         {loading ? (
-          <div className="text-center text-gray-500 mt-12">
-            <p>Loading...</p>
+          <div className="text-center text-gray-600 mt-12">
+            <p className="text-lg">Loading...</p>
           </div>
         ) : (
           <>
@@ -137,8 +124,8 @@ export default function Home() {
             </div>
 
             {filteredSheets.length === 0 && (
-              <div className="text-center text-gray-500 mt-12">
-                <p>No songs found. Try adjusting your search or filters.</p>
+              <div className="text-center text-parchment/60 mt-12">
+                <p className="text-lg">No songs found. Try adjusting your search or filters.</p>
               </div>
             )}
           </>

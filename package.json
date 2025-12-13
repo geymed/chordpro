@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 5555",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -11,6 +11,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@google-cloud/vision": "^5.3.4",
     "@google/generative-ai": "^0.21.0",
     "@vercel/postgres": "^0.5.1",
     "adm-zip": "^0.5.10",

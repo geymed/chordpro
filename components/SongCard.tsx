@@ -22,7 +22,7 @@ export default function SongCard({ sheet, onDelete }: SongCardProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!showConfirm) {
       setShowConfirm(true);
       return;
@@ -44,38 +44,40 @@ export default function SongCard({ sheet, onDelete }: SongCardProps) {
   const sectionCount = sheet.sections.length;
   const hasCapo = sheet.capo !== undefined;
 
+  // Check if title/artist contain Hebrew
+  const titleHasHebrew = /[\u0590-\u05FF]/.test(sheet.title + (sheet.artist || ''));
+  const isRTL = titleHasHebrew;
+
   return (
-    <div className="bg-gray-800 rounded-lg p-6 hover:bg-gray-750 transition-colors border border-gray-700 relative group">
+    <div className="rounded-lg p-6 bg-parchment hover:bg-white transition-colors border border-gray-400 shadow-md relative group" dir={isRTL ? 'rtl' : 'ltr'}>
       <Link href={`/sheet/${sheet.id}`} className="block">
-        <h3 className="text-xl font-bold text-white mb-2">{sheet.title}</h3>
-        <p className="text-gray-400 mb-4">{sheet.artist}</p>
-        <div className="flex items-center gap-4 text-sm text-gray-500">
-          <div className="flex items-center gap-1">
+        <h3 className="text-xl font-vintage font-bold text-gray-900 mb-2" dir={isRTL ? 'rtl' : 'ltr'}>{sheet.title}</h3>
+        <p className="text-gray-600 mb-4 font-medium" dir={isRTL ? 'rtl' : 'ltr'}>{sheet.artist}</p>
+        <div className={`flex items-center gap-4 text-sm text-gray-500 ${isRTL ? 'flex-row-reverse' : ''}`} dir={isRTL ? 'rtl' : 'ltr'}>
+          <div className={`flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
             <span>🌐</span>
-            <span>{sheet.language === 'he' ? 'עברית' : 'English'}</span>
+            <span dir={sheet.language === 'he' ? 'rtl' : 'ltr'}>{sheet.language === 'he' ? 'עברית' : 'English'}</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className={`flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
             <span>🎵</span>
             <span>{sectionCount} section{sectionCount !== 1 ? 's' : ''}{hasCapo ? ' • Capo' : ''}</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className={`flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
             <span>📅</span>
             <span>Added {formatDate(sheet.dateAdded)}</span>
           </div>
         </div>
       </Link>
-      
+
       {/* Delete Button */}
       <button
         onClick={handleDelete}
         disabled={isDeleting}
-        className={`absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity ${
-          showConfirm ? 'opacity-100' : ''
-        } ${
-          showConfirm 
-            ? 'bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm' 
-            : 'text-gray-400 hover:text-red-400 text-xl'
-        }`}
+        className={`absolute ${isRTL ? 'left-4' : 'right-4'} top-4 opacity-0 group-hover:opacity-100 transition-opacity ${showConfirm ? 'opacity-100' : ''
+          } ${showConfirm
+            ? 'bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm font-medium'
+            : 'text-gray-400 hover:text-red-600 text-xl'
+          }`}
         title={showConfirm ? 'Click again to confirm' : 'Delete song'}
       >
         {showConfirm ? (isDeleting ? 'Deleting...' : 'Confirm?') : '🗑️'}

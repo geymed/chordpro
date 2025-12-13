@@ -15,6 +15,8 @@ export default function SheetPage() {
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     getSheet(id)
@@ -41,11 +43,35 @@ export default function SheetPage() {
     }
   };
 
+  const handleSave = async () => {
+    if (!sheet) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/sheets/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sheet),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save changes');
+      }
+
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Failed to save:', error);
+      alert('Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#e8d5b7' }}>
         <div className="text-center text-gray-500">
-          <p>Loading...</p>
+          <p className="text-lg">Loading...</p>
         </div>
       </div>
     );
@@ -53,12 +79,12 @@ export default function SheetPage() {
 
   if (!sheet) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#e8d5b7' }}>
         <div className="text-center">
-          <h1 className="text-2xl text-white mb-4">Song not found</h1>
+          <h1 className="text-2xl text-gray-900 mb-4 font-serif">Song not found</h1>
           <button
             onClick={() => router.push('/')}
-            className="text-yellow-400 hover:text-yellow-300"
+            className="text-blue-600 hover:text-blue-700 font-medium"
           >
             ← Back to Library
           </button>
@@ -68,103 +94,117 @@ export default function SheetPage() {
   }
 
   const isRTL = sheet.language === 'he';
+  // Check if title/artist actually contain Hebrew
+  const titleHasHebrew = /[\u0590-\u05FF]/.test(sheet.title + (sheet.artist || ''));
+  const titleIsRTL = titleHasHebrew;
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
-
   return (
-    <div className="min-h-screen bg-gray-900">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button and Delete Button */}
-        <div className="mb-8 flex items-center justify-between">
+    <div className="min-h-screen bg-wood text-parchment font-sans" dir={isRTL ? 'rtl' : 'ltr'}>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
+        {/* Compact Header Row */}
+        <div className={`mb-3 flex items-center ${isRTL ? 'flex-row-reverse' : ''} justify-between`}>
           <button
             onClick={() => router.push('/')}
-            className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+            className="text-parchment hover:text-white px-3 py-1.5 rounded-md hover:bg-parchment/20 transition-colors flex items-center gap-2 font-medium text-sm"
           >
             <span>←</span>
             <span>Back to Library</span>
           </button>
 
-          <button
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${showConfirm
-              ? 'bg-red-600 hover:bg-red-700 text-white'
-              : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-red-400'
-              }`}
-          >
-            {showConfirm ? (
-              isDeleting ? 'Deleting...' : 'Confirm Delete?'
-            ) : (
+          <div className="flex items-center gap-2">
+            {isEditing ? (
               <>
-                <span>🗑️</span>
-                <span>Delete</span>
+                <button
+                  onClick={() => setIsEditing(false)}
+                  disabled={isSaving}
+                  className="bg-parchment/80 text-wood px-3 py-1.5 rounded-md hover:bg-parchment transition-colors font-medium text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 transition-colors font-medium text-sm"
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
               </>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1 font-medium text-sm"
+              >
+                <span>✏️</span>
+                <span>Edit</span>
+              </button>
             )}
-          </button>
+
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-1 font-medium text-sm ${showConfirm
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-parchment/80 hover:bg-parchment text-wood'
+                }`}
+            >
+              {showConfirm ? (
+                isDeleting ? 'Deleting...' : 'Confirm?'
+              ) : (
+                <>
+                  <span>🗑️</span>
+                  <span>Delete</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* Song Header */}
-        <div className={`mb-8 ${isRTL ? 'text-right' : 'text-left'}`}>
-          <h1 className="text-4xl font-bold text-white mb-2">{sheet.title}</h1>
-          <p className="text-gray-400 text-lg mb-4">{sheet.artist}</p>
-
-          <div className="flex items-center gap-6 text-sm text-gray-400 mb-6">
-            <div className="flex items-center gap-2">
-              <span>🌐</span>
-              <span>{sheet.language === 'he' ? 'עברית' : 'English'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>📅</span>
-              <span>Added {formatDate(sheet.dateAdded)}</span>
-            </div>
-          </div>
-
-          {/* Separator */}
-          <div className="border-t border-gray-700 my-6"></div>
-
-          {/* Key and Tempo */}
-          <div className="flex items-center gap-6 text-sm">
-            {sheet.key && (
-              <div className="flex items-center gap-2">
-                <span>🔧</span>
-                <span className="text-gray-400">Key:</span>
-                <span className="text-yellow-400 font-semibold">{sheet.key}</span>
-              </div>
-            )}
-            {sheet.tempo && (
-              <div className="flex items-center gap-2">
-                <span>⏱️</span>
-                <span className="text-gray-400">Tempo:</span>
-                <span className="text-yellow-400 font-semibold">{sheet.tempo}</span>
-              </div>
-            )}
-            {sheet.capo !== undefined && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400">Capo:</span>
-                <span className="text-yellow-400 font-semibold">{sheet.capo}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Separator */}
-          <div className="border-t border-gray-700 my-6"></div>
+        {/* Song Title Row */}
+        <div className="mb-3" dir={titleIsRTL ? 'rtl' : 'ltr'} style={{ textAlign: titleIsRTL ? 'right' : 'left' }}>
+          <h1 className="text-2xl font-vintage font-bold text-parchment leading-tight" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.title}</h1>
+          <p className="text-base text-parchment/80" dir={titleIsRTL ? 'rtl' : 'ltr'}>{sheet?.artist}</p>
         </div>
 
-        {/* Chord Sheet Content */}
-        <div className={`space-y-8 ${isRTL ? 'text-right' : 'text-left'}`}>
-          {sheet.sections.map((section) => (
-            <div key={section.id} className="space-y-4">
-              <h2 className="text-yellow-400 font-bold text-lg mb-4">{section.label}</h2>
-              {section.lines.map((line, idx) => (
-                <ChordLine key={idx} line={line} rtl={isRTL} />
-              ))}
-            </div>
-          ))}
+        {/* Song Card Container - Maximized */}
+        <div id="song-content" className="bg-parchment rounded-lg p-6 sm:p-8 border border-gray-400 shadow-lg text-gray-900 max-h-[calc(100vh-140px)] overflow-y-auto">
+          {/* Chord Sheet Content */}
+          <div className="space-y-8" dir={isRTL ? 'rtl' : 'ltr'} style={{ direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
+            {sheet?.sections.map((section) => {
+              const labelHasHebrew = /[\u0590-\u05FF]/.test(section.label);
+              const sectionHasHebrew = section.lines.some(line =>
+                line.words.some(w => w.word && /[\u0590-\u05FF]/.test(w.word))
+              );
+              const sectionIsRTL = sectionHasHebrew;
+              const labelIsRTL = labelHasHebrew;
+
+              return (
+                <div key={section.id} className="space-y-4" dir={sectionIsRTL ? 'rtl' : 'ltr'} style={{ direction: sectionIsRTL ? 'rtl' : 'ltr' }}>
+                  <h2 className="text-gray-800 font-vintage font-bold text-xl mb-4 tracking-wide uppercase" dir={labelIsRTL ? 'rtl' : 'ltr'} style={{ direction: labelIsRTL ? 'rtl' : 'ltr', textAlign: labelIsRTL ? 'right' : 'left', width: '100%' }}>{section.label}</h2>
+                  {section.lines.map((line, lineIdx) => (
+                    <ChordLine
+                      key={lineIdx}
+                      line={line}
+                      rtl={isRTL}
+                      editable={isEditing}
+                      onLineChange={(updatedLine) => {
+                        if (!sheet) return;
+                        const updatedSections = [...sheet.sections];
+                        const sectionIndex = sheet.sections.findIndex(s => s.id === section.id);
+                        updatedSections[sectionIndex].lines[lineIdx] = updatedLine;
+                        setSheet({ ...sheet, sections: updatedSections });
+                      }}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <AutoScrollControl />
+      <AutoScrollControl targetId="song-content" />
     </div>
   );
 }

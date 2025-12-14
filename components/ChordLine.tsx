@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChordLine as ChordLineType } from '@/types';
+import { transposeChord } from '@/lib/chord-utils';
 
 
 interface ChordLineProps {
@@ -9,9 +10,10 @@ interface ChordLineProps {
   rtl?: boolean;
   editable?: boolean;
   onLineChange?: (updatedLine: ChordLineType) => void;
+  transpositionOffset?: number; // Number of semitones to transpose (0 = no transposition)
 }
 
-export default function ChordLine({ line, rtl = false, editable = false, onLineChange }: ChordLineProps) {
+export default function ChordLine({ line, rtl = false, editable = false, onLineChange, transpositionOffset = 0 }: ChordLineProps) {
   const { words } = line;
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
@@ -99,6 +101,11 @@ export default function ChordLine({ line, rtl = false, editable = false, onLineC
           // Check if this specific word contains Hebrew
           const wordHasHebrew = /[\u0590-\u05FF]/.test(word);
           const wordDir = wordHasHebrew ? 'rtl' : 'ltr';
+          
+          // Apply transposition if in view mode and offset is non-zero
+          const displayChord = (!editable && transpositionOffset !== 0 && chord) 
+            ? transposeChord(chord, transpositionOffset) 
+            : chord;
 
           return (
             <div
@@ -128,7 +135,7 @@ export default function ChordLine({ line, rtl = false, editable = false, onLineC
                     color: '#c45a1f' // Dark orange for prominent visibility
                   }}
                 >
-                  {chord || ''}
+                  {displayChord || ''}
                 </div>
               )}
 

@@ -17,6 +17,7 @@ export default function SheetPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [transpositionOffset, setTranspositionOffset] = useState(0);
 
   useEffect(() => {
     getSheet(id)
@@ -133,13 +134,50 @@ export default function SheetPage() {
                 </button>
               </>
             ) : (
-              <button
-                onClick={() => router.push(`/upload/image?id=${id}`)}
-                className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1 font-medium text-sm"
-              >
-                <span>✏️</span>
-                <span>Edit</span>
-              </button>
+              <>
+                {/* Transposition Widget */}
+                <div className="flex items-center gap-2 bg-parchment/80 px-3 py-1.5 rounded-md border border-gray-400">
+                  <span className="text-wood text-sm font-medium">Transpose:</span>
+                  <button
+                    onClick={() => setTranspositionOffset(prev => prev - 1)}
+                    className="text-wood hover:text-gray-700 font-bold text-lg w-8 h-8 flex items-center justify-center rounded hover:bg-gray-200 transition-colors"
+                    title="Transpose down 1 semitone"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    value={transpositionOffset}
+                    onChange={(e) => setTranspositionOffset(parseInt(e.target.value) || 0)}
+                    className="w-16 text-center text-wood font-bold text-sm bg-transparent border border-gray-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    min="-12"
+                    max="12"
+                  />
+                  <button
+                    onClick={() => setTranspositionOffset(prev => prev + 1)}
+                    className="text-wood hover:text-gray-700 font-bold text-lg w-8 h-8 flex items-center justify-center rounded hover:bg-gray-200 transition-colors"
+                    title="Transpose up 1 semitone"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => setTranspositionOffset(0)}
+                    className={`text-wood hover:text-gray-700 text-xs px-2 py-0.5 rounded hover:bg-gray-200 transition-all ${
+                      transpositionOffset === 0 ? 'invisible' : 'visible'
+                    }`}
+                    title="Reset to original"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <button
+                  onClick={() => router.push(`/upload/image?id=${id}`)}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1 font-medium text-sm"
+                >
+                  <span>✏️</span>
+                  <span>Edit</span>
+                </button>
+              </>
             )}
 
             <button
@@ -189,6 +227,7 @@ export default function SheetPage() {
                       line={line}
                       rtl={isRTL}
                       editable={isEditing}
+                      transpositionOffset={transpositionOffset}
                       onLineChange={(updatedLine) => {
                         if (!sheet) return;
                         const updatedSections = [...sheet.sections];

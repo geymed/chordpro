@@ -1124,7 +1124,7 @@ More chorus lyrics`}
                                                                                     }
                                                                                 }
                                                                             }}
-                                                                            placeholder="C"
+                                                                            placeholder="-"
                                                                             className="w-20 bg-white text-blue-800 font-bold font-mono text-sm px-2 py-1 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-400 border border-gray-300 transition-all hover:border-blue-400"
                                                                             title="Chord (Tab/Shift+Tab to navigate, Enter to add word, Ctrl+Arrow to move)"
                                                                         />

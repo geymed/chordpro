@@ -300,4 +300,97 @@ export function normalizeChords(chords: (string | Chord)[]): (Chord | null)[] {
   return chords.map(chord => normalizeChord(chord));
 }
 
+/**
+ * Transposes a chord by a given number of semitones
+ * @param chord - The chord to transpose (can be a string or Chord object)
+ * @param semitones - Number of semitones to shift (positive = up, negative = down)
+ * @returns The transposed chord as a string, or empty string if chord is invalid
+ */
+export function transposeChord(chord: string | Chord | null, semitones: number): string {
+  if (!chord) {
+    return '';
+  }
+
+  // Parse chord if it's a string
+  const chordObj = typeof chord === 'string' ? parseChord(chord) : chord;
+  if (!chordObj) {
+    return typeof chord === 'string' ? chord : '';
+  }
+
+  // Handle special cases (N.C., x) - don't transpose these
+  if (chordObj.special) {
+    return chordToString(chordObj);
+  }
+
+  // Map notes to semitones (C=0, C#/Db=1, D=2, D#/Eb=3, E=4, F=5, F#/Gb=6, G=7, G#/Ab=8, A=9, A#/Bb=10, B=11)
+  const noteToSemitones: Record<Note, number> = {
+    'C': 0,
+    'D': 2,
+    'E': 4,
+    'F': 5,
+    'G': 7,
+    'A': 9,
+    'B': 11,
+  };
+
+  const semitonesToNote: { [key: number]: { note: Note; accidental: Accidental } } = {
+    0: { note: 'C', accidental: null },
+    1: { note: 'C', accidental: '#' },
+    2: { note: 'D', accidental: null },
+    3: { note: 'D', accidental: '#' },
+    4: { note: 'E', accidental: null },
+    5: { note: 'F', accidental: null },
+    6: { note: 'F', accidental: '#' },
+    7: { note: 'G', accidental: null },
+    8: { note: 'G', accidental: '#' },
+    9: { note: 'A', accidental: null },
+    10: { note: 'A', accidental: '#' },
+    11: { note: 'B', accidental: null },
+  };
+
+  // Calculate current semitone value
+  let currentSemitones = noteToSemitones[chordObj.note];
+  if (chordObj.accidental === '#') {
+    currentSemitones += 1;
+  } else if (chordObj.accidental === 'b') {
+    currentSemitones -= 1;
+  }
+
+  // Apply transposition
+  let newSemitones = (currentSemitones + semitones) % 12;
+  if (newSemitones < 0) {
+    newSemitones += 12;
+  }
+
+  // Get new note and accidental
+  const newNoteData = semitonesToNote[newSemitones];
+  if (!newNoteData) {
+    return chordToString(chordObj); // Fallback to original if calculation fails
+  }
+
+  // Transpose inversion if present
+  let newInversion: Note | null = null;
+  if (chordObj.inversion) {
+    let invSemitones = noteToSemitones[chordObj.inversion];
+    let newInvSemitones = (invSemitones + semitones) % 12;
+    if (newInvSemitones < 0) {
+      newInvSemitones += 12;
+    }
+    const newInvData = semitonesToNote[newInvSemitones];
+    if (newInvData) {
+      newInversion = newInvData.note;
+    }
+  }
+
+  // Create transposed chord object
+  const transposedChord: Chord = {
+    ...chordObj,
+    note: newNoteData.note,
+    accidental: newNoteData.accidental,
+    inversion: newInversion,
+  };
+
+  return chordToString(transposedChord);
+}
+
 

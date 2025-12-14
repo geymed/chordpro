@@ -636,43 +636,26 @@ function ImageUploadPageContent() {
                 ).join(' ');
             const hasHebrew = /[\u0590-\u05FF]/.test(allText);
 
-            // Get image data if available (limit size to avoid database issues)
-            let imageData: string | undefined = undefined;
-            if (images.length > 0 && images[0].preview) {
-                const preview = images[0].preview;
-                // Limit image data to 1MB (base64 is ~33% larger than binary)
-                // This prevents database issues with very large images
-                if (preview.length < 1_500_000) { // ~1MB base64
-                    imageData = preview;
-                } else {
-                    console.warn('Image data too large, skipping save');
-                    // Optionally show a warning to user
-                }
-            }
+            // Get image data if available
+            const imageData = images.length > 0 && images[0].preview 
+                ? images[0].preview 
+                : undefined;
 
             if (editId) {
                 // Update existing sheet
-                try {
-                    const existingSheet = await getSheet(editId);
-                    if (!existingSheet) {
-                        throw new Error(`Sheet with ID "${editId}" not found. It may have been deleted or the database may not be initialized.`);
-                    }
-                    const updatedSheet: ChordSheet = {
-                        ...existingSheet,
-                        title,
-                        artist,
-                        sections,
-                        language: hasHebrew ? 'he' : 'en',
-                        imageData: imageData || existingSheet.imageData,
-                    };
-                    await updateSheet(updatedSheet);
-                } catch (updateError: any) {
-                    // If update fails with 404, it means the sheet doesn't exist
-                    if (updateError?.message?.includes('404') || updateError?.message?.includes('not found')) {
-                        throw new Error(`Cannot update: Sheet with ID "${editId}" not found. It may have been deleted. Try creating a new song instead.`);
-                    }
-                    throw updateError;
+                const existingSheet = await getSheet(editId);
+                if (!existingSheet) {
+                    throw new Error('Sheet not found');
                 }
+                const updatedSheet: ChordSheet = {
+                    ...existingSheet,
+                    title,
+                    artist,
+                    sections,
+                    language: hasHebrew ? 'he' : 'en',
+                    imageData: imageData || existingSheet.imageData,
+                };
+                await updateSheet(updatedSheet);
             } else {
                 // Create new sheet
             const newSheet: Omit<ChordSheet, 'id' | 'dateAdded'> = {
@@ -687,17 +670,8 @@ function ImageUploadPageContent() {
             }
             router.push('/');
         } catch (err) {
-            console.error('Save error:', err);
-            let errorMessage = 'Failed to save song';
-            if (err instanceof Error) {
-                errorMessage = err.message;
-            } else if (typeof err === 'string') {
-                errorMessage = err;
-            } else if (err && typeof err === 'object' && 'message' in err) {
-                errorMessage = String(err.message);
-            }
-            // Show detailed error to help debug production issues
-            alert(`Failed to save song: ${errorMessage}\n\nCheck browser console for details.`);
+            console.error(err);
+            alert('Failed to save song');
         } finally {
             setSaving(false);
         }

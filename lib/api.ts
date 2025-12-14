@@ -21,11 +21,7 @@ export async function createSheet(sheet: Omit<ChordSheet, 'id' | 'dateAdded'>): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(sheet),
   });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-    const errorMessage = errorData.error || errorData.details || `Server error (HTTP status ${response.status}): ${response.statusText}`;
-    throw new Error(errorMessage);
-  }
+  if (!response.ok) throw new Error('Failed to create sheet');
   return response.json();
 }
 
@@ -35,11 +31,7 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(sheet),
   });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-    const errorMessage = errorData.error || errorData.details || `Server error (HTTP status ${response.status}): ${response.statusText}`;
-    throw new Error(errorMessage);
-  }
+  if (!response.ok) throw new Error('Failed to update sheet');
   return response.json();
 }
 

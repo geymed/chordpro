@@ -62,6 +62,10 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
         }
         
         if (sectionLabel) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:48',message:'Section header detected',data:{sectionLabel,line:trimmedLine},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             if (currentSection.lines.length > 0) {
                 sections.push(currentSection);
             }
@@ -80,6 +84,10 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
         }
 
         if (isChordLine(currentLine)) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:61',message:'Chord line detected',data:{line:currentLine.substring(0,50),hasNextLine:!!nextLine,nextIsChordLine:nextLine ? isChordLine(nextLine) : false,currentSection:currentSection.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+            
             // It's a chord line. Check if next line is lyrics.
             if (nextLine && !isChordLine(nextLine) && nextLine.trim()) {
                 // Merge Chords + Lyrics
@@ -140,6 +148,10 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
                 i++; // Skip next line since we consumed it
             } else {
                 // Just chords (instrumental line) - chord-only line like intro
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:120',message:'Chord-only line detected',data:{line:currentLine.substring(0,50),section:currentSection.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
+                
                 // Extract chords - handle both plain format "D C E" and [ch]D[/ch] format
                 let chordLine = currentLine.trim();
                 // Remove [ch] and [/ch] tags if present
@@ -147,6 +159,10 @@ export function parseGridTextToChordSheet(text: string): ChordSheet {
                 
                 // Split by whitespace and filter out empty strings
                 const tokens = chordLine.split(/\s+/).filter(t => t.trim());
+                
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/analysis/chord-parser.ts:128',message:'Extracted chords from chord-only line',data:{chords:tokens,count:tokens.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 
                 if (tokens.length > 0) {
                     currentSection.lines.push({

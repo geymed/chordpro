@@ -104,250 +104,49 @@ if (process.env.NODE_ENV !== 'production' && typeof window === 'undefined') {
 }
 
 // Determine if we're using local PostgreSQL or Vercel Postgres
-// Check at runtime, not at module load time (for serverless functions)
-function getPostgresUrl(): string {
-  return process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || '';
-}
-
-function isVercelPostgres(): boolean {
-  // Vercel Postgres provides these specific environment variables
-  return !!(process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD);
-}
-
-function isLocalPostgres(): boolean {
-  const postgresUrl = getPostgresUrl();
-  if (!postgresUrl) return false;
-  if (postgresUrl.includes('localhost') || postgresUrl.includes('127.0.0.1')) return true;
-  // For Vercel Postgres, we can use pg directly if we have a connection string
-  // @vercel/postgres seems to have issues, so use pg for all cases when we have a URL
-  return false; // Always use pg when we have a connection string
-}
+const postgresUrl = process.env.POSTGRES_URL || '';
+const isLocalPostgres = postgresUrl.includes('localhost') ||
+  postgresUrl.includes('127.0.0.1') ||
+  (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com'));
 
 // Create pg Pool for local PostgreSQL
 let pgPool: Pool | null = null;
 let vercelSql: any = null;
 
+if (isLocalPostgres && postgresUrl) {
+  console.log('Using local PostgreSQL with pg driver');
+  pgPool = new Pool({
+    connectionString: postgresUrl,
+  });
+} else {
+  console.log('Using Vercel Postgres');
+  // Lazy load @vercel/postgres only when needed
+  vercelSql = require('@vercel/postgres').sql;
+}
+
 // SQL query function that works with both local PostgreSQL and Vercel Postgres
 async function sql(strings: TemplateStringsArray, ...values: any[]) {
-  const postgresUrl = getPostgresUrl();
-  const usingVercelPostgres = isVercelPostgres();
-  
-  // Check database provider
-  const isNeon = postgresUrl.includes('neon.tech');
-  const isSupabase = postgresUrl.includes('supabase.co') || postgresUrl.includes('supabase.com');
-  
-  // Log connection details for debugging (masked for security)
-  if (postgresUrl) {
-    const maskedUrl = postgresUrl.replace(/:([^:@]+)@/, ':****@');
-    console.log('🔌 Connection details:', {
-      hasUrl: !!postgresUrl,
-      provider: isSupabase ? 'Supabase' : isNeon ? 'Neon' : usingVercelPostgres ? 'Vercel Postgres' : 'PostgreSQL',
-      urlPreview: maskedUrl.substring(0, 80) + '...',
-      isSupabase,
-      isNeon,
-      usingVercelPostgres,
-      envVars: {
-        POSTGRES_URL: !!process.env.POSTGRES_URL,
-        POSTGRES_PRISMA_URL: !!process.env.POSTGRES_PRISMA_URL,
-        POSTGRES_URL_NON_POOLING: !!process.env.POSTGRES_URL_NON_POOLING,
-        POSTGRES_HOST: !!process.env.POSTGRES_HOST
-      }
-    });
-  }
-  
-  // IMPORTANT: For Supabase, always use pg directly (don't use @vercel/postgres)
-  // @vercel/postgres only works with Vercel Postgres, not Supabase
-  if (isSupabase) {
-    console.log('✅ Detected Supabase, using pg driver directly (bypassing @vercel/postgres)');
-    // Skip @vercel/postgres and go straight to pg
-  } else if (usingVercelPostgres && !vercelSql) {
-    // Only use @vercel/postgres for actual Vercel Postgres (not Supabase)
-    try {
-      console.log('Detected Vercel Postgres, using @vercel/postgres');
+  if (isLocalPostgres && pgPool) {
+    // Use pg for local PostgreSQL
+    const query = strings.reduce((acc, str, i) => {
+      return acc + str + (i < values.length ? `$${i + 1}` : '');
+    }, '');
+    const result = await pgPool.query(query, values);
+    return { rows: result.rows, rowCount: result.rowCount || 0 };
+  } else {
+    // Use @vercel/postgres for Vercel Postgres
+    if (!vercelSql) {
       vercelSql = require('@vercel/postgres').sql;
-    } catch (error) {
-      console.warn('Failed to load @vercel/postgres, falling back to pg:', error);
     }
-  }
-  
-  // Try @vercel/postgres only if NOT Supabase and it's available
-  if (vercelSql && usingVercelPostgres && !isSupabase) {
-    try {
-      return vercelSql(strings, ...values);
-    } catch (error: any) {
-      console.error('@vercel/postgres error:', {
-        code: error?.code,
-        message: error?.message,
-        name: error?.name,
-        stack: error?.stack?.split('\n')[0]
-      });
-      
-      // If we get a 404, the database might not exist or be inactive
-      if (error?.message?.includes('404') || error?.name === 'NeonDbError') {
-        throw new Error(
-          `Vercel Postgres connection failed (404). This usually means:\n` +
-          `1. The database doesn't exist in your Vercel project\n` +
-          `2. The database is paused or inactive\n` +
-          `3. The database was deleted\n\n` +
-          `To fix this:\n` +
-          `1. Go to your Vercel project dashboard\n` +
-          `2. Navigate to the "Storage" tab\n` +
-          `3. Check if a Postgres database exists\n` +
-          `4. If not, create a new Postgres database\n` +
-          `5. If it exists but is paused, resume it\n\n` +
-          `Original error: ${error?.message || error?.name || 'Unknown error'}`
-        );
-      }
-      
-      // Fall through to pg if @vercel/postgres fails with other errors
-      console.log('Falling back to pg driver');
-    }
-  }
-  
-  // Use pg package directly when we have a connection string
-  if (postgresUrl) {
-    if (!pgPool) {
-      console.log(`Using pg driver with connection string (Provider: ${isSupabase ? 'Supabase' : isNeon ? 'Neon' : 'PostgreSQL'})`);
-      
-      const poolConfig: any = {
-        connectionString: postgresUrl,
-        // Add connection pool settings for serverless
-        max: 1, // Limit connections for serverless
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 30000, // Increased timeout for local connections
-      };
-      
-      // For Supabase, try to use direct connection if pooler is timing out
-      if (isSupabase && postgresUrl.includes('pooler')) {
-        // Check if we have a direct connection string available
-        const directUrl = process.env.POSTGRES_URL_NON_POOLING || 
-                         postgresUrl.replace('pooler.supabase.com:6543', 'supabase.co:5432')
-                                    .replace('?sslmode=require&supa=base-pooler.x', '?sslmode=require');
-        if (directUrl !== postgresUrl) {
-          console.log('Supabase pooler detected, trying direct connection instead...');
-          poolConfig.connectionString = directUrl;
-        }
-      }
-      
-      // Supabase requires SSL - handle certificate validation
-      if (isSupabase) {
-        // For Supabase, we need to accept their SSL certificate
-        // rejectUnauthorized: false allows self-signed certificates in the chain
-        poolConfig.ssl = {
-          rejectUnauthorized: false
-        };
-        console.log('Configured SSL for Supabase connection (accepting self-signed cert)');
-        
-        // Also ensure the connection string doesn't override our SSL settings
-        // Remove sslmode and other query params from connection string if present
-        if (poolConfig.connectionString.includes('?')) {
-          const [baseUrl, queryParams] = poolConfig.connectionString.split('?');
-          // Keep only essential params, remove sslmode (we handle it via poolConfig)
-          const params = new URLSearchParams(queryParams);
-          params.delete('sslmode');
-          const newQuery = params.toString();
-          poolConfig.connectionString = newQuery ? `${baseUrl}?${newQuery}` : baseUrl;
-          console.log('Cleaned connection string query parameters');
-        }
-      }
-      
-      // Neon-specific: use non-pooling connection string if available
-      if (isNeon && process.env.POSTGRES_URL_NON_POOLING) {
-        console.log('Using Neon non-pooling connection string');
-        poolConfig.connectionString = process.env.POSTGRES_URL_NON_POOLING;
-      }
-      
-      // For Neon, configure SSL
-      if (isNeon) {
-        poolConfig.ssl = { rejectUnauthorized: false };
-      }
-      
-      pgPool = new Pool(poolConfig);
-    }
-    
-    try {
-      // Use pg for all PostgreSQL connections
-      const query = strings.reduce((acc, str, i) => {
-        return acc + str + (i < values.length ? `$${i + 1}` : '');
-      }, '');
-      const result = await pgPool.query(query, values);
-      return { rows: result.rows, rowCount: result.rowCount || 0 };
-    } catch (error: any) {
-      const errorInfo = {
-        code: error?.code,
-        message: error?.message,
-        detail: error?.detail,
-        name: error?.name,
-        stack: error?.stack?.split('\n')[0],
-        isSupabase,
-        isNeon,
-        connectionStringHost: postgresUrl ? new URL(postgresUrl).hostname : 'none'
-      };
-      console.error('pg query error:', errorInfo);
-      
-      // If Supabase 404, provide detailed troubleshooting
-      if (isSupabase && (error?.message?.includes('404') || error?.code === 'ENOTFOUND' || error?.name === 'NeonDbError')) {
-        const hostname = postgresUrl ? new URL(postgresUrl).hostname : 'unknown';
-        throw new Error(
-          `Supabase connection failed. Error: ${error?.message || error?.name || 'Unknown error'}\n\n` +
-          `Troubleshooting steps:\n` +
-          `1. Verify the connection string in Supabase Dashboard → Settings → Database → Connection string (URI)\n` +
-          `2. Ensure the database is not paused (check Supabase dashboard)\n` +
-          `3. Check that POSTGRES_URL in Vercel matches the connection string from Supabase\n` +
-          `4. Verify the connection string includes the correct password\n` +
-          `5. Try using POSTGRES_URL_NON_POOLING if available\n\n` +
-          `Connection host: ${hostname}\n` +
-          `Error code: ${error?.code || 'none'}`
-        );
-      }
-      
-      // If Neon error and we haven't tried non-pooling, try that
-      if (isNeon && error?.message?.includes('404') && process.env.POSTGRES_URL_NON_POOLING && postgresUrl === process.env.POSTGRES_URL) {
-        console.log('Retrying with Neon non-pooling connection string...');
-        if (pgPool) {
-          await pgPool.end();
-          pgPool = null;
-        }
-        // Retry with non-pooling
-        return sql(strings, ...values);
-      }
-      
-      // Generic error with details
-      throw new Error(
-        `Database query failed: ${error?.message || error?.name || 'Unknown error'}\n` +
-        `Code: ${error?.code || 'none'}\n` +
-        `Provider: ${isSupabase ? 'Supabase' : isNeon ? 'Neon' : 'PostgreSQL'}`
-      );
-    }
-  }
-  
-  // Fallback to @vercel/postgres only if no connection string is available
-  if (!vercelSql) {
-    try {
-      console.log('Falling back to @vercel/postgres (no connection string found)');
-      vercelSql = require('@vercel/postgres').sql;
-    } catch (error) {
-      throw new Error(
-        'No database connection available. Please set POSTGRES_URL environment variable.'
-      );
-    }
-  }
-  
-  try {
     return vercelSql(strings, ...values);
-  } catch (error: any) {
-    console.error('@vercel/postgres error:', {
-      code: error?.code,
-      message: error?.message
-    });
-    throw error;
   }
 }
 
 // Initialize database schema
 export async function initDatabase() {
-  // Don't check for POSTGRES_URL here - @vercel/postgres will handle it automatically
-  // If it's missing, the sql() function will catch it with a better error message
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:146',message:'initDatabase entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   try {
     // Create sheets table
     await sql`
@@ -368,23 +167,26 @@ export async function initDatabase() {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `;
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:166',message:'CREATE TABLE completed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     
     // Check if image_data column exists, add it if missing (migration)
-    // This is safe to run multiple times - IF NOT EXISTS prevents errors
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:169',message:'Checking for image_data column',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       await sql`
         ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT
       `;
-      console.log('✅ image_data column migration check completed');
-    } catch (alterError: any) {
-      // If column already exists, PostgreSQL might throw an error
-      // Check if it's a "duplicate column" error - that's OK
-      if (alterError?.code === '42701' || alterError?.message?.includes('already exists')) {
-        console.log('✅ image_data column already exists');
-      } else {
-        console.warn('⚠️ Could not verify image_data column:', alterError?.message);
-        // Continue anyway - createSheet has fallback logic
-      }
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:172',message:'ALTER TABLE completed (or column already exists)',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } catch (alterError) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:175',message:'ALTER TABLE failed',data:{error:alterError instanceof Error ? alterError.message : String(alterError)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      // Column might already exist or there's a different issue, continue
     }
 
     // Create index for faster searches
@@ -471,15 +273,15 @@ function rowToSheet(row: any): ChordSheet {
       };
     });
 
-  return {
-    id: row.id,
+    return {
+      id: row.id,
       title: row.title || 'Untitled Song',
-    titleEn: row.title_en || undefined,
+      titleEn: row.title_en || undefined,
       artist: row.artist || 'Unknown Artist',
-    artistEn: row.artist_en || undefined,
+      artistEn: row.artist_en || undefined,
       language: (row.language as 'he' | 'en') || 'en',
-    key: row.key || undefined,
-    tempo: row.tempo || undefined,
+      key: row.key || undefined,
+      tempo: row.tempo || undefined,
       capo: row.capo !== null && row.capo !== undefined ? row.capo : undefined,
       sections,
       dateAdded: row.date_added || new Date().toISOString().split('T')[0],
@@ -499,46 +301,15 @@ function rowToSheet(row: any): ChordSheet {
   }
 }
 
-// Track if database has been initialized
-let dbInitialized = false;
-
 // Get all sheets
 export async function getAllSheets(): Promise<ChordSheet[]> {
   try {
-    // Auto-initialize database on first use if not already initialized
-    if (!dbInitialized) {
-      try {
-        await initDatabase();
-        dbInitialized = true;
-      } catch (initError) {
-        console.warn('Auto-initialization failed, continuing anyway:', initError);
-        // Don't block - might already be initialized
-      }
-    }
-    
     const { rows } = await sql`
       SELECT * FROM sheets
       ORDER BY date_added DESC, created_at DESC
     `;
     return rows.map(rowToSheet);
-  } catch (error: any) {
-    // If table doesn't exist, try to initialize and retry
-    if (error?.code === '42P01' || error?.message?.includes('does not exist') || error?.message?.includes('relation') && error?.message?.includes('does not exist')) {
-      console.log('Table not found, attempting to initialize database...');
-      try {
-        await initDatabase();
-        dbInitialized = true;
-        // Retry the query
-        const { rows } = await sql`
-          SELECT * FROM sheets
-          ORDER BY date_added DESC, created_at DESC
-        `;
-        return rows.map(rowToSheet);
-      } catch (retryError) {
-        console.error('Error after initialization retry:', retryError);
-        throw retryError;
-      }
-    }
+  } catch (error) {
     console.error('Error fetching sheets:', error);
     throw error;
   }
@@ -560,22 +331,10 @@ export async function getSheetById(id: string): Promise<ChordSheet | null> {
 
 // Create a new sheet
 export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
-  // Auto-initialize database on first use if not already initialized
-  if (!dbInitialized) {
-    try {
-      console.log('Auto-initializing database before createSheet...');
-      await initDatabase();
-      dbInitialized = true;
-      console.log('Database initialized successfully');
-    } catch (initError: any) {
-      console.error('Auto-initialization failed:', initError?.message || initError);
-      // Don't block - might already be initialized, but log the error
-      dbInitialized = false; // Reset so we can try again
-    }
-  }
-  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:309',message:'createSheet entry',data:{sheetId:sheet.id,hasImageData:!!sheet.imageData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   try {
-    console.log('Creating sheet with ID:', sheet.id);
     // Validate and fix chord names before saving
     const validatedSheet = validateAndFixChordSheet(sheet);
 
@@ -590,25 +349,12 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
 
-    // Ensure image_data column exists before inserting
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:325',message:'Before INSERT - checking columns',data:{insertingImageData:!!truncatedSheet.imageData,columns:['id','title','title_en','artist','artist_en','language','key','tempo','capo','sections','date_added','image_data']},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // Try INSERT with image_data first, fallback to without if column doesn't exist
     try {
-      await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
-    } catch (migrationError: any) {
-      // Ignore "column already exists" errors
-      if (migrationError?.code === '42701' || migrationError?.message?.includes('already exists')) {
-        // Column already exists, that's fine
-      } else if (migrationError?.code === 'missing_connection_string' || migrationError?.message?.includes('POSTGRES_URL')) {
-        // Database connection issue - re-throw to show proper error
-        throw migrationError;
-      } else {
-        // Other errors - log but don't fail
-        console.warn('Could not ensure image_data column exists:', migrationError?.message);
-      }
-    }
-
-    // Try INSERT with image_data
-    try {
-      console.log('Attempting INSERT with image_data column...');
       await sql`
         INSERT INTO sheets (
           id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
@@ -627,67 +373,86 @@ export async function createSheet(sheet: ChordSheet): Promise<ChordSheet> {
           ${truncatedSheet.imageData || null}
         )
       `;
-      console.log('Sheet created successfully with image_data');
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:343',message:'INSERT with image_data succeeded',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
     } catch (insertError: any) {
-      console.error('INSERT error:', insertError?.code, insertError?.message);
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:346',message:'INSERT with image_data failed, trying fallback',data:{errorCode:insertError?.code,errorColumn:insertError?.column,errorMessage:insertError?.message?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       // If error is about missing column, try without image_data
       if (insertError?.code === '42703' || (insertError?.message && insertError.message.includes('image_data'))) {
-        console.warn('image_data column missing, inserting without it');
-        // Fallback: INSERT without image_data
-    await sql`
-      INSERT INTO sheets (
-        id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
-      ) VALUES (
-            ${truncatedSheet.id},
-            ${truncatedSheet.title},
-            ${truncatedSheet.titleEn || null},
-            ${truncatedSheet.artist},
-            ${truncatedSheet.artistEn || null},
-            ${truncatedSheet.language},
-            ${truncatedSheet.key || null},
-            ${truncatedSheet.tempo || null},
-            ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-            ${JSON.stringify(truncatedSheet.sections)},
-            ${truncatedSheet.dateAdded}
-          )
-        `;
-        console.log('Sheet created successfully without image_data');
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:350',message:'Retrying INSERT without image_data column',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        
+        // Try to add the column first (migration on-the-fly)
+        try {
+          await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:354',message:'Added image_data column, retrying INSERT',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Retry with image_data
+          await sql`
+            INSERT INTO sheets (
+              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added, image_data
+            ) VALUES (
+              ${truncatedSheet.id},
+              ${truncatedSheet.title},
+              ${truncatedSheet.titleEn || null},
+              ${truncatedSheet.artist},
+              ${truncatedSheet.artistEn || null},
+              ${truncatedSheet.language},
+              ${truncatedSheet.key || null},
+              ${truncatedSheet.tempo || null},
+              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+              ${JSON.stringify(truncatedSheet.sections)},
+              ${truncatedSheet.dateAdded},
+              ${truncatedSheet.imageData || null}
+            )
+          `;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:375',message:'INSERT succeeded after adding column',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        } catch (retryError) {
+          // If adding column failed, try INSERT without image_data as last resort
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:379',message:'Column addition failed, trying INSERT without image_data',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          await sql`
+            INSERT INTO sheets (
+              id, title, title_en, artist, artist_en, language, key, tempo, capo, sections, date_added
+            ) VALUES (
+              ${truncatedSheet.id},
+              ${truncatedSheet.title},
+              ${truncatedSheet.titleEn || null},
+              ${truncatedSheet.artist},
+              ${truncatedSheet.artistEn || null},
+              ${truncatedSheet.language},
+              ${truncatedSheet.key || null},
+              ${truncatedSheet.tempo || null},
+              ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+              ${JSON.stringify(truncatedSheet.sections)},
+              ${truncatedSheet.dateAdded}
+            )
+          `;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:396',message:'INSERT without image_data succeeded',data:{sheetId:truncatedSheet.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        }
       } else {
-        // Different error, re-throw with more context
-        console.error('INSERT failed with error:', {
-          code: insertError?.code,
-          message: insertError?.message,
-          detail: insertError?.detail
-        });
+        // Different error, re-throw
         throw insertError;
       }
     }
     return truncatedSheet;
-  } catch (error: any) {
-    // If table doesn't exist, try to initialize and retry
-    if (error?.code === '42P01' || (error?.message?.includes('does not exist') && error?.message?.includes('relation'))) {
-      console.log('Table not found, attempting to initialize database...');
-      try {
-        await initDatabase();
-        dbInitialized = true;
-        // Retry the create operation
-        console.log('Retrying createSheet after initialization...');
-        return await createSheet(sheet);
-      } catch (retryError: any) {
-        console.error('Error after initialization retry:', {
-          code: retryError?.code,
-          message: retryError?.message,
-          detail: retryError?.detail
-        });
-        throw retryError;
-      }
-    }
-    console.error('Error creating sheet:', {
-      code: error?.code,
-      message: error?.message,
-      detail: error?.detail,
-      stack: error?.stack
-    });
+  } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/df55eda9-872a-4822-90aa-20cfdc31835e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/db.ts:345',message:'INSERT error caught',data:{errorMessage:error instanceof Error ? error.message : String(error),errorCode:(error as any)?.code,errorColumn:(error as any)?.column},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    console.error('Error creating sheet:', error);
     throw error;
   }
 }
@@ -709,63 +474,21 @@ export async function updateSheet(sheet: ChordSheet): Promise<ChordSheet> {
       tempo: validatedSheet.tempo ? validatedSheet.tempo.substring(0, 50) : undefined,
     };
 
-    // Ensure image_data column exists before updating
-    try {
-      await sql`ALTER TABLE sheets ADD COLUMN IF NOT EXISTS image_data TEXT`;
-    } catch (migrationError: any) {
-      // Ignore "column already exists" errors
-      if (migrationError?.code === '42701' || migrationError?.message?.includes('already exists')) {
-        // Column already exists, that's fine
-      } else if (migrationError?.code === 'missing_connection_string' || migrationError?.message?.includes('POSTGRES_URL')) {
-        // Database connection issue - re-throw to show proper error
-        throw migrationError;
-      } else {
-        // Other errors - log but don't fail
-        console.warn('Could not ensure image_data column exists:', migrationError?.message);
-      }
-    }
-
-    // Try UPDATE with image_data
-    try {
-      await sql`
-        UPDATE sheets SET
-          title = ${truncatedSheet.title},
-          title_en = ${truncatedSheet.titleEn || null},
-          artist = ${truncatedSheet.artist},
-          artist_en = ${truncatedSheet.artistEn || null},
-          language = ${truncatedSheet.language},
-          key = ${truncatedSheet.key || null},
-          tempo = ${truncatedSheet.tempo || null},
-          capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-          sections = ${JSON.stringify(truncatedSheet.sections)},
-          image_data = ${truncatedSheet.imageData || null},
-          updated_at = NOW()
-        WHERE id = ${truncatedSheet.id}
-      `;
-    } catch (updateError: any) {
-      // If error is about missing column, try without image_data
-      if (updateError?.code === '42703' || (updateError?.message && updateError.message.includes('image_data'))) {
-        console.warn('image_data column missing, updating without it');
-        // Fallback: UPDATE without image_data
     await sql`
       UPDATE sheets SET
-            title = ${truncatedSheet.title},
-            title_en = ${truncatedSheet.titleEn || null},
-            artist = ${truncatedSheet.artist},
-            artist_en = ${truncatedSheet.artistEn || null},
-            language = ${truncatedSheet.language},
-            key = ${truncatedSheet.key || null},
-            tempo = ${truncatedSheet.tempo || null},
-            capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
-            sections = ${JSON.stringify(truncatedSheet.sections)},
+        title = ${truncatedSheet.title},
+        title_en = ${truncatedSheet.titleEn || null},
+        artist = ${truncatedSheet.artist},
+        artist_en = ${truncatedSheet.artistEn || null},
+        language = ${truncatedSheet.language},
+        key = ${truncatedSheet.key || null},
+        tempo = ${truncatedSheet.tempo || null},
+        capo = ${truncatedSheet.capo !== undefined ? truncatedSheet.capo : null},
+        sections = ${JSON.stringify(truncatedSheet.sections)},
+        image_data = ${truncatedSheet.imageData || null},
         updated_at = NOW()
-          WHERE id = ${truncatedSheet.id}
-        `;
-      } else {
-        // Different error, re-throw
-        throw updateError;
-      }
-    }
+      WHERE id = ${truncatedSheet.id}
+    `;
     return truncatedSheet;
   } catch (error) {
     console.error('Error updating sheet:', error);

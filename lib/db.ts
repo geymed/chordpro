@@ -107,17 +107,46 @@ if (process.env.NODE_ENV !== 'production' && typeof window === 'undefined') {
 const postgresUrl = process.env.POSTGRES_URL || '';
 const isLocalPostgres = postgresUrl.includes('localhost') ||
   postgresUrl.includes('127.0.0.1') ||
-  (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com'));
+  (!process.env.VERCEL && postgresUrl && !postgresUrl.includes('neon.tech') && !postgresUrl.includes('vercel-storage.com') && !postgresUrl.includes('supabase.com'));
+const isSupabase = postgresUrl.includes('supabase.com');
 
 // Create pg Pool for local PostgreSQL
 let pgPool: Pool | null = null;
 let vercelSql: any = null;
 
-if (isLocalPostgres && postgresUrl) {
-  console.log('Using local PostgreSQL with pg driver');
-  pgPool = new Pool({
-    connectionString: postgresUrl,
-  });
+console.log('Database connection check:');
+console.log('  POSTGRES_URL:', postgresUrl ? `${postgresUrl.substring(0, 30)}...` : '(empty)');
+console.log('  isLocalPostgres:', isLocalPostgres);
+console.log('  VERCEL env:', process.env.VERCEL);
+
+if ((isLocalPostgres || isSupabase) && postgresUrl) {
+  console.log(isSupabase ? 'Using Supabase PostgreSQL with pg driver' : 'Using local PostgreSQL with pg driver');
+  try {
+    // Configure SSL for Supabase - remove sslmode from connection string to avoid conflicts
+    let cleanConnectionString = postgresUrl;
+    let sslConfig: { rejectUnauthorized: boolean } | undefined = undefined;
+    
+    if (isSupabase) {
+      // Remove sslmode parameters from connection string since we handle SSL via config object
+      cleanConnectionString = postgresUrl
+        .replace(/[?&]sslmode=[^&]*/g, '')
+        .replace(/[?&]supa=[^&]*/g, '')
+        .replace(/[?&]$/, '');
+      sslConfig = { rejectUnauthorized: false };
+      console.log('  → SSL config: { rejectUnauthorized: false }');
+    }
+    
+    pgPool = new Pool({
+      connectionString: cleanConnectionString,
+      ssl: sslConfig,
+    });
+    console.log('  → pg Pool created successfully');
+  } catch (error) {
+    console.error('  → Failed to create pg Pool:', error);
+    console.log('  → Falling back to Vercel Postgres');
+    vercelSql = require('@vercel/postgres').sql;
+    pgPool = null;
+  }
 } else {
   console.log('Using Vercel Postgres');
   // Lazy load @vercel/postgres only when needed
@@ -126,7 +155,7 @@ if (isLocalPostgres && postgresUrl) {
 
 // SQL query function that works with both local PostgreSQL and Vercel Postgres
 async function sql(strings: TemplateStringsArray, ...values: any[]) {
-  if (isLocalPostgres && pgPool) {
+  if (pgPool) {
     // Use pg for local PostgreSQL
     const query = strings.reduce((acc, str, i) => {
       return acc + str + (i < values.length ? `$${i + 1}` : '');
